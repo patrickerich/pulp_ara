@@ -117,6 +117,7 @@ toolchain-llvm-rt: git-submodules Makefile toolchain-llvm-main toolchain-llvm-ne
 	-DCOMPILER_RT_BUILD_PROFILE=OFF \
 	-DCOMPILER_RT_BUILD_SANITIZERS=OFF \
 	-DCOMPILER_RT_BUILD_XRAY=OFF \
+	-DCOMPILER_RT_BUILD_CTX_PROFILE=OFF \
 	-DCMAKE_C_COMPILER_WORKS=1 \
 	-DCMAKE_CXX_COMPILER_WORKS=1 \
 	-DCMAKE_SIZEOF_VOID_P=4 \
@@ -136,33 +137,36 @@ toolchain-llvm-rt: git-submodules Makefile toolchain-llvm-main toolchain-llvm-ne
 riscv-isa-sim: ${ISA_SIM_INSTALL_DIR} ${ISA_SIM_MOD_INSTALL_DIR}
 riscv-isa-sim-mod: ${ISA_SIM_MOD_INSTALL_DIR}
 
-${ISA_SIM_MOD_INSTALL_DIR}: Makefile patches/0003-riscv-isa-sim-patch ${ISA_SIM_INSTALL_DIR}
+${ISA_SIM_MOD_INSTALL_DIR}: Makefile patches/0003-riscv-isa-sim-patch patches/0004-riscv-isa-sim-device-h-cstdint.patch ${ISA_SIM_INSTALL_DIR}
 	# There are linking issues with the standard libraries when using newer CC/CXX versions to compile Spike.
 	# Therefore, here we resort to older versions of the compilers.
 	# If there are problems with dynamic linking, use:
 	# make riscv-isa-sim LDFLAGS="-static-libstdc++"
 	# Spike was compiled successfully using gcc and g++ version 7.2.0.
-	cd toolchain/riscv-isa-sim && git stash && git apply ../../patches/0003-riscv-isa-sim-patch && \
-	rm -rf build && mkdir -p build && cd build; \
-	[ -d dtc ] || git clone https://git.kernel.org/pub/scm/utils/dtc/dtc.git && cd dtc && git checkout $(DTC_COMMIT); \
-	make install SETUP_PREFIX=$(ISA_SIM_MOD_INSTALL_DIR) PREFIX=$(ISA_SIM_MOD_INSTALL_DIR) && \
-	PATH=$(ISA_SIM_MOD_INSTALL_DIR)/bin:$$PATH; cd ..; \
-	../configure --prefix=$(ISA_SIM_MOD_INSTALL_DIR) \
+	cd toolchain/riscv-isa-sim && \
+	(git apply --reject --whitespace=fix ../../patches/0004-riscv-isa-sim-device-h-cstdint.patch 2>/dev/null || true) && \
+	(git apply --reject --whitespace=fix ../../patches/0003-riscv-isa-sim-patch 2>/dev/null || true) && \
+	rm -rf build dtc && mkdir -p build && cd build && \
+	git clone https://git.kernel.org/pub/scm/utils/dtc/dtc.git && cd dtc && git checkout $(DTC_COMMIT) && \
+	make install NO_PYTHON=1 SETUP_PREFIX=$(ISA_SIM_MOD_INSTALL_DIR) PREFIX=$(ISA_SIM_MOD_INSTALL_DIR) && \
+	cd .. && \
+	PATH=$(ISA_SIM_MOD_INSTALL_DIR)/bin:$$PATH ../configure --prefix=$(ISA_SIM_MOD_INSTALL_DIR) \
 	--without-boost --without-boost-asio --without-boost-regex && \
-	make -j32 && make install; \
-	git stash
+	make -j32 && make install
 
-${ISA_SIM_INSTALL_DIR}: Makefile
+${ISA_SIM_INSTALL_DIR}: Makefile patches/0004-riscv-isa-sim-device-h-cstdint.patch
 	# There are linking issues with the standard libraries when using newer CC/CXX versions to compile Spike.
 	# Therefore, here we resort to older versions of the compilers.
 	# If there are problems with dynamic linking, use:
 	# make riscv-isa-sim LDFLAGS="-static-libstdc++"
 	# Spike was compiled successfully using gcc and g++ version 7.2.0.
-	cd toolchain/riscv-isa-sim && rm -rf build && mkdir -p build && cd build; \
-	[ -d dtc ] || git clone https://git.kernel.org/pub/scm/utils/dtc/dtc.git && cd dtc && git checkout $(DTC_COMMIT); \
-	make install SETUP_PREFIX=$(ISA_SIM_INSTALL_DIR) PREFIX=$(ISA_SIM_INSTALL_DIR) && \
-	PATH=$(ISA_SIM_INSTALL_DIR)/bin:$$PATH; cd ..; \
-	../configure --prefix=$(ISA_SIM_INSTALL_DIR) \
+	cd toolchain/riscv-isa-sim && \
+	(git apply --reject --whitespace=fix ../../patches/0004-riscv-isa-sim-device-h-cstdint.patch 2>/dev/null || true) && \
+	rm -rf build dtc && mkdir -p build && cd build && \
+	git clone https://git.kernel.org/pub/scm/utils/dtc/dtc.git && cd dtc && git checkout $(DTC_COMMIT) && \
+	make install NO_PYTHON=1 SETUP_PREFIX=$(ISA_SIM_INSTALL_DIR) PREFIX=$(ISA_SIM_INSTALL_DIR) && \
+	cd .. && \
+	PATH=$(ISA_SIM_INSTALL_DIR)/bin:$$PATH ../configure --prefix=$(ISA_SIM_INSTALL_DIR) \
 	--without-boost --without-boost-asio --without-boost-regex && \
 	make -j32 && make install
 

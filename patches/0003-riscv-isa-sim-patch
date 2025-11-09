@@ -3,7 +3,7 @@ index f0bb9463..8d31a51c 100644
 --- a/riscv/execute.cc
 +++ b/riscv/execute.cc
 @@ -273,6 +273,10 @@ void processor_t::step(size_t n)
- 
+
            insn_fetch_t fetch = mmu->load_insn(pc);
            if (debug && !state.serialized)
 +            // mp-17: check if the instruction is a vector one
@@ -34,7 +34,7 @@ index ffc706bd..95b391a6 100644
 +      s = readline(0); // 2 is stderr, but when doing reads it reverts to stdin
  #endif
      }
- 
+
 @@ -432,8 +432,23 @@ void sim_t::interactive_run(const std::string& cmd, const std::vector<std::strin
    size_t steps = args.size() ? atoll(args[0].c_str()) : -1;
    ctrlc_pressed = false;
@@ -57,13 +57,13 @@ index ffc706bd..95b391a6 100644
 +      p->is_vec_insn = 0;
 +    }
 +  }
- 
+
    std::ostream out(sout_.rdbuf());
    if (!noisy) out << ":" << std::endl;
 @@ -614,6 +629,30 @@ void sim_t::interactive_freg(const std::string& cmd, const std::vector<std::stri
    out << std::hex << "0x" << std::setfill ('0') << std::setw(16) << r.v[1] << std::setw(16) << r.v[0] << std::endl;
  }
- 
+
 +// mp-17: modified function to print all the scalar registers
 +void sim_t::interactive_fregd_all(const std::string& cmd, const std::vector<std::string>& args)
 +{
@@ -96,9 +96,9 @@ index fc80914e..d43bc96f 100644
 --- a/riscv/processor.h
 +++ b/riscv/processor.h
 @@ -239,6 +239,8 @@ public:
- 
+
    const isa_parser_t &get_isa() { return *isa; }
- 
+
 +  // mp-17: register a vector instruction
 +  int is_vec_insn = 0;
    void set_debug(bool value);
@@ -117,3 +117,17 @@ index 5787d5d7..48d6e40b 100644
    void interactive_pc(const std::string& cmd, const std::vector<std::string>& args);
    void interactive_mem(const std::string& cmd, const std::vector<std::string>& args);
    void interactive_str(const std::string& cmd, const std::vector<std::string>& args);
+
+
+diff --git a/fesvr/device.h b/fesvr/device.h
+--- a/fesvr/device.h
++++ b/fesvr/device.h
+@@ -4,6 +4,7 @@
+ #include &lt;vector&gt;
+ #include &lt;queue&gt;
+ #include &lt;cstring&gt;
+ #include &lt;string&gt;
+ #include &lt;functional&gt;
++#include &lt;cstdint&gt;
+
+ class memif_t;
