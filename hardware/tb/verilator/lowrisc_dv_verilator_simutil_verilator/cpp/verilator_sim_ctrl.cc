@@ -265,9 +265,9 @@ void VerilatorSimCtrl::PrintStatistics() const {
 
 const char *VerilatorSimCtrl::GetTraceFileName() const {
 #ifdef VM_TRACE_FST
-  return "sim.fst";
+  return "build/verilator_waves.fst";
 #else
-  return "sim.vcd";
+  return "build/verilator_waves.vcd";
 #endif
 }
 

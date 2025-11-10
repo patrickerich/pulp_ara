@@ -143,6 +143,29 @@ preload=/some_path/some_binary make sim
 app=hello_world make simc
 ```
 
+#### Xcelium Simulation
+
+For users with access to Cadence Xcelium, you can also run simulations using:
+
+```bash
+# Go to the hardware folder
+cd hardware
+# Compile the design with Xcelium
+make compile_xcelium
+# Run the simulation with the *hello_world* binary loaded (interactive with GUI)
+app=hello_world make simx
+# Run the simulation without starting the GUI
+app=hello_world make simxc
+# Run with a custom binary
+preload=/some_path/some_binary make simx
+# Enable waveform dumping (SHM format)
+app=hello_world trace=1 make simx
+```
+
+Waveform traces are saved in SHM format (Xcelium's native format) in `hardware/build/waves.shm/` and can be viewed with SimVision.
+
+#### Verilator Simulation
+
 We also provide the `simv` makefile target to run simulations with the Verilator model.
 
 ```bash
@@ -174,7 +197,13 @@ Alternatively, you can also use the `riscv_tests` target at Ara's top-level Make
 ### Traces
 
 Add `trace=1` to the `verilate`, `simv`, and `riscv_tests_simv` commands to generate waveform traces in the `fst` format.
-You can use `gtkwave` to open such waveforms.
+Traces are saved to `hardware/build/verilator_waves.fst` and can be viewed with:
+```bash
+gtkwave hardware/build/verilator_waves.fst
+```
+
+For Xcelium simulations, add `trace=1` to enable SHM waveform dumping.
+Traces are saved to `hardware/build/xcelium_waves.shm/` and can be viewed with SimVision.
 
 ### Ideal Dispatcher mode
 

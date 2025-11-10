@@ -60,6 +60,12 @@ endif
 questa_cmd     ?= questa-$(questa_version)
 # QuestaSim arguments
 questa_args    ?=
+# Xcelium version
+xcelium_version ?= 23.09
+# Xcelium command
+xcelium_cmd     ?= xrun
+# Xcelium arguments
+xcelium_args    ?=
 # Path to the binaries
 app_path       ?= $(abspath $(ROOT_DIR)/../apps/bin)
 # Path to ideal dispatcher vtraces
@@ -84,6 +90,11 @@ ifeq (, $(shell which $(questa_cmd)))
   questa_cmd =
 endif
 
+# Check if Xcelium is available
+ifeq (, $(shell which $(xcelium_cmd)))
+  xcelium_cmd =
+endif
+
 questa_args += +UVM_NO_RELNOTES
 ifdef app
 ifeq ($(ideal_dispatcher), 1)
@@ -98,11 +109,35 @@ endif
 questa_args += -sv_lib $(dpi_library)/ara_dpi -work $(library) -voptargs=+acc
 questa_args += -suppress vsim-3009 -suppress vopt-7033
 
+# Xcelium simulation arguments
+ifdef app
+ifeq ($(ideal_dispatcher), 1)
+	xcelium_preload ?= "$(app_path)/$(app).ideal"
+else
+	xcelium_preload ?= "$(app_path)/$(app)"
+endif
+endif
+ifdef preload
+	xcelium_preload ?= $(preload)
+endif
+ifdef xcelium_preload
+	xcelium_args += +PRELOAD=$(xcelium_preload)
+endif
+xcelium_args += -sv_lib $(dpi_library)/ara_dpi_xcelium -work $(library)
+xcelium_args += -access +rwc -64bit
+
 # DPI source files
 dpi   := $(patsubst tb/dpi/%.cc,$(buildpath)/$(dpi_library)/%.o,$(wildcard tb/dpi/*.cc))
 
 vlog_args += -suppress vlog-2583 -suppress vlog-13314 -suppress vlog-13233
 vlog_args += -work $(library)
+
+# Xcelium compilation arguments
+xcelium_compile_args += -64bit -sv -access +rwc
+xcelium_compile_args += -work $(library)
+xcelium_compile_args += -disable_sem2009
+xcelium_compile_args += -errormax 0
+xcelium_compile_args += -timescale 1ns/1ps
 
 # Bender
 # Defines
@@ -171,6 +206,33 @@ simc: compile
 	$(questa_cmd) vsim -c $(questa_args) $(library).$(top_level) -do "run -a"
 	./scripts/return_status.sh $(buildpath)/transcript
 
+# Xcelium compilation
+.PHONY: compile_xcelium
+compile_xcelium: dpi_xcelium $(buildpath) bender $(buildpath)/compile_xcelium_$(config).f
+$(buildpath)/compile_xcelium_$(config).f: $(config_file) Makefile ../Bender.yml $(shell find src -type f) $(shell find ../config -type f) $(shell find include -type f) $(shell find tb -type f) $(shell find deps -type f)
+	$(BENDER) script flist $(bender_targs_simc) $(bender_defs) | grep -v '\.svh$$' > $(buildpath)/compile_xcelium_$(config).f
+	$(BENDER) script vsim $(bender_targs_simc) $(bender_defs) | grep '+incdir+' | sed 's|.*"+incdir+\$$ROOT/hardware/\(.*\)" \\|-incdir ../\1|' | tr '\n' ' ' > $(buildpath)/xcelium_incdirs_$(config).txt
+	cd $(buildpath) && $(xcelium_cmd) $(xcelium_compile_args) $$(cat xcelium_incdirs_$(config).txt) -f compile_xcelium_$(config).f \
+		-defparam ara_tb.NrLanes=$(nr_lanes) -defparam ara_tb.VLEN=$(vlen) -elaborate -top $(library).$(top_level)
+
+# Xcelium simulation (interactive with GUI)
+.PHONY: simx
+simx: compile_xcelium
+	cd $(buildpath) && \
+	$(if $(trace),XCELIUM_TRACE=1,) $(xcelium_cmd) -R $(xcelium_args) -gui -input ../scripts/xcelium.tcl
+	@if [ -f $(buildpath)/xcelium.log ]; then \
+		./scripts/return_status.sh $(buildpath)/xcelium.log; \
+	fi
+
+# Xcelium simulation (batch mode)
+.PHONY: simxc
+simxc: compile_xcelium
+	cd $(buildpath) && \
+	$(if $(trace),XCELIUM_TRACE=1,) $(xcelium_cmd) -R $(xcelium_args) -batch -input ../scripts/xcelium.tcl
+	@if [ -f $(buildpath)/xcelium.log ]; then \
+		./scripts/return_status.sh $(buildpath)/xcelium.log; \
+	fi
+
 # RISC-V Tests simulation
 APPS_DIR := $(abspath $(ROOT_DIR)/../apps)
 TESTS_DIR := $(APPS_DIR)/riscv-tests/isa
@@ -236,7 +298,7 @@ $(veril_library)/V$(veril_top): $(config_file) Makefile ../Bender.yml $(shell fi
   --cc                                                                          \
   $(if $(trace),--trace-fst -Wno-INSECURE,)                                     \
   --top-module $(veril_top) &&                                                  \
-	cd $(veril_library) && OBJCACHE='' make -j4 -f V$(veril_top).mk
+ cd $(veril_library) && VERILATOR_ROOT=$(INSTALL_DIR)/verilator OBJCACHE='' make -j4 -f V$(veril_top).mk
 
 # Simulation
 .PHONY: simv
@@ -271,6 +333,25 @@ $(buildpath)/$(dpi_library)/%.o: tb/dpi/%.cc
 $(buildpath)/$(dpi_library)/ara_dpi.so: $(dpi)
 	mkdir -p $(buildpath)/$(dpi_library)
 	$(CXX) -shared -m64 -o $(buildpath)/$(dpi_library)/ara_dpi.so $?
+
+# Xcelium DPI
+.PHONY: dpi_xcelium
+dpi_xcelium: $(buildpath)/$(dpi_library)/ara_dpi_xcelium.so
+
+$(buildpath)/$(dpi_library)/ara_dpi_xcelium.so: tb/dpi/*.cc
+	mkdir -p $(buildpath)/$(dpi_library)
+	@if [ -n "$$XCELIUM_HOME" ]; then \
+		$(CXX) -shared -fPIC -std=c++11 -o $@ $^ \
+			-I$$XCELIUM_HOME/tools/include \
+			-I$(INSTALL_DIR)/riscv-isa-sim/include; \
+	elif [ -n "$(xcelium_cmd)" ]; then \
+		XCELIUM_ROOT=$$(dirname $$(dirname $$(which $(xcelium_cmd)))); \
+		$(CXX) -shared -fPIC -std=c++11 -o $@ $^ \
+			-I$$XCELIUM_ROOT/tools/include \
+			-I$(INSTALL_DIR)/riscv-isa-sim/include; \
+	else \
+		echo "Warning: Xcelium not found, skipping DPI compilation"; \
+	fi
 
 # Clean targets
 .PHONY: clean
