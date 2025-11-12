@@ -26,6 +26,25 @@ include $(COMMON_DIR)/runtime.mk
 include $(COMMON_DIR)/riscv_tests.mk
 include $(COMMON_DIR)/default_args.mk
 
+# When COMPILER=gcc is selected, force toolchain and flags to GCC variants so that
+# object files are compiled with GCC-friendly ISA attributes (avoids mixing LLVM attrs).
+ifeq ($(COMPILER),gcc)
+  # Use GCC toolchain for compilation and binutils
+  RISCV_CC      := $(RISCV_CC_GCC)
+  RISCV_CXX     := $(GCC_INSTALL_DIR)/bin/$(RISCV_TARGET)-g++
+  RISCV_OBJDUMP := $(GCC_INSTALL_DIR)/bin/$(RISCV_TARGET)-objdump
+  RISCV_OBJCOPY := $(GCC_INSTALL_DIR)/bin/$(RISCV_TARGET)-objcopy
+  RISCV_AS      := $(GCC_INSTALL_DIR)/bin/$(RISCV_TARGET)-as
+  RISCV_AR      := $(GCC_INSTALL_DIR)/bin/$(RISCV_TARGET)-ar
+  RISCV_LD      := $(GCC_INSTALL_DIR)/bin/$(RISCV_TARGET)-ld
+
+  # Make the generic compile/link flags use the GCC-specific sets
+  RISCV_FLAGS    := $(RISCV_FLAGS_GCC)
+  RISCV_CCFLAGS  := $(RISCV_CCFLAGS_GCC)
+  RISCV_CXXFLAGS := $(RISCV_CXXFLAGS_GCC)
+  RISCV_LDFLAGS  := $(RISCV_LDFLAGS_GCC)
+endif
+
 APPS := $(patsubst $(APPS_DIR)/%/main.c,%,$(shell find $(APPS_DIR) -name "main.c"))
 APPS += $(patsubst $(APPS_DIR)/%/main.cpp,%,$(shell find $(APPS_DIR) -name "main.cpp"))
 # Don't automatically compile the benchmark app, which is only a wrapper around the other apps
@@ -105,10 +124,23 @@ bin/$1.spike: $1/data.S.o.spike $(addsuffix .o.spike, $(shell find $(1) -name "*
 endef
 $(foreach app,$(APPS),$(eval $(call app_compile_template_spike,$(app))))
 
+# Select toolchain for apps (LLVM default; use COMPILER=gcc to switch)
+ifeq ($(COMPILER),gcc)
+APP_CC      := $(RISCV_CC_GCC)
+APP_CCFLAGS := $(RISCV_CCFLAGS_GCC)
+APP_LDFLAGS := $(RISCV_LDFLAGS_GCC)
+APP_RUNTIME := $(RUNTIME_GCC)
+else
+APP_CC      := $(RISCV_CC)
+APP_CCFLAGS := $(RISCV_CCFLAGS)
+APP_LDFLAGS := $(RISCV_LDFLAGS)
+APP_RUNTIME := $(RUNTIME_LLVM)
+endif
+
 define app_compile_template
-bin/$1$(BIN_SUFFIX): $1/data.S.o $(addsuffix .o, $(shell find -L $(1) -name "*.c" -o -name "*.cpp" -o -name "*.S")) $(RUNTIME_LLVM) linker_script
+bin/$1$(BIN_SUFFIX): $1/data.S.o $(addsuffix .o, $(shell find -L $(1) -name "*.c" -o -name "*.cpp" -o -name "*.S")) $(APP_RUNTIME) linker_script
 	mkdir -p bin/
-	$$(RISCV_CC) -Iinclude $(RISCV_CCFLAGS) -o $$@ $$(addsuffix .o, $$(shell find -L $(1) -name "*.c" -o -name "*.cpp" -o -name "*.S")) $(RUNTIME_LLVM) $$(RISCV_LDFLAGS)
+	$$(APP_CC) -Iinclude $(APP_CCFLAGS) -o $$@ $$(addsuffix .o, $$(shell find -L $(1) -name "*.c" -o -name "*.cpp" -o -name "*.S")) $(APP_RUNTIME) $$(APP_LDFLAGS)
 	$$(RISCV_OBJDUMP) $$(RISCV_OBJDUMP_FLAGS) -D $$@ > $$@.dump
 	$$(RISCV_STRIP) $$@ -S --strip-unneeded
 endef
@@ -191,5 +223,7 @@ clean: riscv_tests_spike_clean benchmarks_clean
 	rm -vf $(RUNTIME_LLVM)
 	rm -vf $(RUNTIME_SPIKE)
 	for app in $(APPS); do cd $(APPS_DIR)/$${app} && rm -f $$(find . -name "*.c.o*" -o -name "*.S.o*") && cd ..; done
+	# Aggressively purge all object files to avoid mixing LLVM and GCC-compiled artifacts
+	cd $(APPS_DIR) && find . -type f \( -name "*.o" -o -name "*.o.spike" \) -print -delete
 
 .INTERMEDIATE: $(addsuffix /main.c.o,$(APPS))

@@ -158,11 +158,14 @@ app=hello_world make simx
 app=hello_world make simxc
 # Run with a custom binary
 preload=/some_path/some_binary make simx
-# Enable waveform dumping (SHM format)
+# Enable waveform dumping (default SHM)
 app=hello_world trace=1 make simx
+# Enable VCD waveform dumping
+format=vcd app=hello_world trace=1 make simx
 ```
 
-Waveform traces are saved in SHM format (Xcelium's native format) in `hardware/build/waves.shm/` and can be viewed with SimVision.
+By default (trace=1), waveforms are dumped in SHM format to `hardware/build/xcelium_waves.shm/` and can be viewed with SimVision.
+To dump VCD instead, pass `format=vcd` (or `wavefmt=vcd`); the file `hardware/build/xcelium_waves.vcd` will be produced.
 
 #### Verilator Simulation
 
@@ -202,8 +205,9 @@ Traces are saved to `hardware/build/verilator_waves.fst` and can be viewed with:
 gtkwave hardware/build/verilator_waves.fst
 ```
 
-For Xcelium simulations, add `trace=1` to enable SHM waveform dumping.
-Traces are saved to `hardware/build/xcelium_waves.shm/` and can be viewed with SimVision.
+For Xcelium simulations, add `trace=1` to enable waveform dumping.
+By default SHM traces are saved to `hardware/build/xcelium_waves.shm/` (view with SimVision).
+To dump VCD instead, pass `format=vcd` (or `wavefmt=vcd`), which produces `hardware/build/xcelium_waves.vcd`.
 
 ### Ideal Dispatcher mode
 
