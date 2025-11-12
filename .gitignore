@@ -1,3 +1,5 @@
+hardware/deps
+.vscode
 work-dpi/
 dw*
 site/*
