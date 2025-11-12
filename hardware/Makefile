@@ -219,7 +219,7 @@ $(buildpath)/compile_xcelium_$(config).f: $(config_file) Makefile ../Bender.yml 
 .PHONY: simx
 simx: compile_xcelium
 	cd $(buildpath) && \
-	$(if $(trace),XCELIUM_TRACE=1,) $(xcelium_cmd) -R $(xcelium_args) -gui -input ../scripts/xcelium.tcl
+	$(if $(trace),XCELIUM_TRACE=1,) $(if $(format),XCELIUM_WAVE_FORMAT=$(format),$(if $(wavefmt),XCELIUM_WAVE_FORMAT=$(wavefmt),)) $(xcelium_cmd) -R $(xcelium_args) -gui -input ../scripts/xcelium.tcl
 	@if [ -f $(buildpath)/xcelium.log ]; then \
 		./scripts/return_status.sh $(buildpath)/xcelium.log; \
 	fi
@@ -228,7 +228,7 @@ simx: compile_xcelium
 .PHONY: simxc
 simxc: compile_xcelium
 	cd $(buildpath) && \
-	$(if $(trace),XCELIUM_TRACE=1,) $(xcelium_cmd) -R $(xcelium_args) -batch -input ../scripts/xcelium.tcl
+	$(if $(trace),XCELIUM_TRACE=1,) $(if $(format),XCELIUM_WAVE_FORMAT=$(format),$(if $(wavefmt),XCELIUM_WAVE_FORMAT=$(wavefmt),)) $(xcelium_cmd) -R $(xcelium_args) -batch -input ../scripts/xcelium.tcl
 	@if [ -f $(buildpath)/xcelium.log ]; then \
 		./scripts/return_status.sh $(buildpath)/xcelium.log; \
 	fi
