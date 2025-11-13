@@ -16,7 +16,7 @@ make -C apps clean && make -C apps bin/coremark RISCV_FLAGS='$(LLVM_FLAGS) $(LLV
 
 5) Reportable (GCC: O2, no LTO, no fast-math, no inlining/unrolling)
 # Important: hard-clean .o files to avoid mixing LLVM/GCC object attributes
-COMPILER=gcc RISCV_ARCH=rv64gc make -C apps clean && find ./apps -type f -name '*.o' -delete && COMPILER=gcc RISCV_ARCH=rv64gc make -C apps bin/coremark RISCV_FLAGS_GCC='-mcmodel=medany -march=$(RISCV_ARCH) -mabi=$(RISCV_ABI) -I$(CURDIR)/common -static -O2 -fno-inline -fno-inline-functions -fno-inline-functions-called-once -fno-unroll-loops -fno-builtin -fno-builtin-printf $(DEFINES) $(RISCV_WARNINGS)'
+COMPILER=gcc RISCV_ARCH=rv64gc make -C apps clean && find ./apps -type f -name '*.o' -delete && COMPILER=gcc RISCV_ARCH=rv64gc make -C apps bin/coremark RISCV_FLAGS_GCC='-mcmodel=medany -march=$(RISCV_ARCH) -mabi=$(RISCV_ABI) -I$(CURDIR)/common -static -O2 -fno-inline -fno-inline-functions -fno-inline-functions-called-once -fno-unroll-loops -fno-builtin -fno-builtin-printf $(DEFINES) $(RISCV_WARNINGS)' RISCV_LDFLAGS_GCC='-static -nostartfiles -lm -lgcc -T$(CURDIR)/common/link.ld'
 
 Note:
 - If you previously built with LLVM, stale .o files may carry newer ISA attributes (e.g., zicsr) that older GCC binutils cannot merge.

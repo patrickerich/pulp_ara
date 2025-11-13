@@ -182,6 +182,35 @@ make verilate
 app=hello_world make simv
 ```
 
+Portable linking notes (libelf/libatomic)
+- The Verilator build links against libelf and, on some systems, requires libatomic too.
+- The makefile now auto-detects libelf via pkg-config, with a fallback to -lelf, and links -latomic by default.
+- You can customize via these knobs in the Verilator build:
+  - ELF_LIBS is auto-set to the output of: pkg-config --silence-errors --libs libelf || echo -lelf
+  - ATOMIC_LIBS defaults to -latomic. Set ATOMIC_LIBS= (empty) to disable.
+  - EXTRA_LDFLAGS lets you add site-specific -L/-Wl paths as needed.
+
+Examples:
+```bash
+# Typical build (auto-detect libelf via pkg-config, link libatomic)
+make -C hardware verilate
+
+# If libelf is installed in a non-default directory
+make -C hardware verilate EXTRA_LDFLAGS="-L/opt/libelf/lib"
+
+# If your platform does not need libatomic, you can disable it
+make -C hardware verilate ATOMIC_LIBS=
+
+# Combine both: custom search path and disable atomic
+make -C hardware verilate EXTRA_LDFLAGS="-L/opt/libelf/lib" ATOMIC_LIBS=
+
+# RHEL with gcc-toolset-14 (fixes: "mold: fatal: library not found: atomic")
+make -C hardware verilate EXTRA_LDFLAGS="-L/opt/rh/gcc-toolset-14/root/usr/lib/gcc/x86_64-redhat-linux/14"
+```
+
+The corresponding logic lives in:
+- hardware/Makefile (ELF_LIBS auto-detect, ATOMIC_LIBS default, EXTRA_LDFLAGS hook)
+
 It is also possible to simulate the unit tests compiled in the `apps` folder. Given the number of unit tests, we use Verilator. Use the following command to install Verilator, verilate the design, and run the simulation:
 
 ```bash

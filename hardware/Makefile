@@ -35,6 +35,13 @@ else
 	CLANG_LDFLAGS  := ""
 endif
 
+# Detect libelf libraries via pkg-config, fallback to -lelf
+ELF_LIBS := $(shell pkg-config --silence-errors --libs libelf || echo -lelf)
+# Link libatomic by default for portability (override with ATOMIC_LIBS= to disable)
+ATOMIC_LIBS ?= -latomic
+# Site-specific extra linker flags hook (e.g., -L/path/to/libs)
+EXTRA_LDFLAGS ?=
+
 # build path
 buildpath      ?= build
 resultpath     ?= results
@@ -138,6 +145,9 @@ xcelium_compile_args += -work $(library)
 xcelium_compile_args += -disable_sem2009
 xcelium_compile_args += -errormax 0
 xcelium_compile_args += -timescale 1ns/1ps
+# Align timing semantics to be cycle-accurate without inertial delays.
+# This avoids backpressure differences without redefining VERILATOR in RTL.
+xcelium_compile_args += -delay_mode zero
 
 # Bender
 # Defines
@@ -288,7 +298,7 @@ $(veril_library)/V$(veril_top): $(config_file) Makefile ../Bender.yml $(shell fi
   -CFLAGS -I$(ROOT_DIR)/tb/verilator/lowrisc_dv_verilator_memutil_verilator/cpp \
   -CFLAGS -I$(ROOT_DIR)/tb/verilator/lowrisc_dv_verilator_simutil_verilator/cpp \
   $(CLANG_CXXFLAGS)                                                             \
-  -LDFLAGS "-lelf"                                                              \
+  -LDFLAGS "$(ELF_LIBS) $(ATOMIC_LIBS) $(EXTRA_LDFLAGS)"                        \
   $(CLANG_LDFLAGS)                                                              \
   --exe                                                                         \
   $(ROOT_DIR)/tb/verilator/lowrisc_dv_verilator_memutil_dpi/cpp/*.cc            \
