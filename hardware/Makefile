@@ -257,16 +257,16 @@ verilate: $(buildpath) bender $(veril_library)/V$(veril_top)
 $(veril_library)/V$(veril_top): $(config_file) Makefile ../Bender.yml $(shell find src -type f) $(shell find ../config -type f) $(shell find include -type f) $(shell find tb -type f) $(shell find deps -type f)
 	rm -rf $(veril_library); mkdir -p $(veril_library)
 	$(BENDER) script verilator $(bender_targs_veril) $(bender_defs_veril) > $(veril_library)/bender_script_$(config)
-# Ensure Verilator symlinks exist for hierarchical mode
-	@if [ -d "$(INSTALL_DIR)/verilator" ]; then \
-		mkdir -p $(INSTALL_DIR)/verilator/share/verilator; \
-		[ -L $(INSTALL_DIR)/verilator/share/verilator/verilator_bin ] || \
-			ln -sf ../../bin/verilator_bin $(INSTALL_DIR)/verilator/share/verilator/verilator_bin; \
-		[ -L $(INSTALL_DIR)/verilator/share/verilator/verilator_bin_dbg ] || \
-			ln -sf ../../bin/verilator_bin_dbg $(INSTALL_DIR)/verilator/share/verilator/verilator_bin_dbg; \
-		[ -L $(INSTALL_DIR)/verilator/include ] || \
-			ln -sf share/verilator/include $(INSTALL_DIR)/verilator/include; \
-	fi
+# # Ensure Verilator symlinks exist for hierarchical mode
+# 	@if [ -d "$(INSTALL_DIR)/verilator" ]; then \
+# 		mkdir -p $(INSTALL_DIR)/verilator/share/verilator; \
+# 		[ -L $(INSTALL_DIR)/verilator/share/verilator/verilator_bin ] || \
+# 			ln -sf ../../bin/verilator_bin $(INSTALL_DIR)/verilator/share/verilator/verilator_bin; \
+# 		[ -L $(INSTALL_DIR)/verilator/share/verilator/verilator_bin_dbg ] || \
+# 			ln -sf ../../bin/verilator_bin_dbg $(INSTALL_DIR)/verilator/share/verilator/verilator_bin_dbg; \
+# 		[ -L $(INSTALL_DIR)/verilator/include ] || \
+# 			ln -sf share/verilator/include $(INSTALL_DIR)/verilator/include; \
+# 	fi
 # Verilate the design
 	VERILATOR_ROOT=$(INSTALL_DIR)/verilator $(veril_path)/verilator -f $(veril_library)/bender_script_$(config)           \
   --timescale 1ns/1ps                                                           \
