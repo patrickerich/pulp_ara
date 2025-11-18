@@ -1,5 +1,5 @@
 diff --git a/src/rtl/tc_sram.sv b/src/rtl/tc_sram.sv
-index b702a11..eeef776 100644
+index b702a11..476f592 100644
 --- a/src/rtl/tc_sram.sv
 +++ b/src/rtl/tc_sram.sv
 @@ -145,12 +145,14 @@ module tc_sram #(
@@ -42,11 +42,39 @@ index b702a11..eeef776 100644
              end else begin
                // otherwise update read address for subsequent non request cycles
                r_addr_q[i] <= addr_i[i];
-@@ -202,6 +208,23 @@ module tc_sram #(
+@@ -202,44 +208,116 @@ module tc_sram #(
      end
    end
- 
-+  `ifdef VERILATOR
+
+-// Validate parameters.
+-// pragma translate_off
+-`ifndef VERILATOR
+-`ifndef TARGET_SYNTHESIS
+-  initial begin: p_assertions
+-    assert ($bits(addr_i)  == NumPorts * AddrWidth) else $fatal(1, "AddrWidth problem on `addr_i`");
+-    assert ($bits(wdata_i) == NumPorts * DataWidth) else $fatal(1, "DataWidth problem on `wdata_i`");
+-    assert ($bits(be_i)    == NumPorts * BeWidth)   else $fatal(1, "BeWidth   problem on `be_i`"   );
+-    assert ($bits(rdata_o) == NumPorts * DataWidth) else $fatal(1, "DataWidth problem on `rdata_o`");
+-    assert (NumWords  >= 32'd1) else $fatal(1, "NumWords has to be > 0");
+-    assert (DataWidth >= 32'd1) else $fatal(1, "DataWidth has to be > 0");
+-    assert (ByteWidth >= 32'd1) else $fatal(1, "ByteWidth has to be > 0");
+-    assert (NumPorts  >= 32'd1) else $fatal(1, "The number of ports must be at least 1!");
+-  end
+-  initial begin: p_sim_hello
+-    if (PrintSimCfg) begin
+-      $display("#################################################################################");
+-      $display("tc_sram functional instantiated with the configuration:"                          );
+-      $display("Instance: %m"                                                                     );
+-      $display("Number of ports   (dec): %0d", NumPorts                                           );
+-      $display("Number of words   (dec): %0d", NumWords                                           );
+-      $display("Address width     (dec): %0d", AddrWidth                                          );
+-      $display("Data width        (dec): %0d", DataWidth                                          );
+-      $display("Byte width        (dec): %0d", ByteWidth                                          );
+-      $display("Byte enable width (dec): %0d", BeWidth                                            );
+-      $display("Latency Cycles    (dec): %0d", Latency                                            );
+-      $display("Simulation init   (str): %0s", SimInit                                            );
+-      $display("#################################################################################");
++  // `ifdef VERILATOR
 +  for (genvar i = 0; i < NumPorts; i++) begin
 +    // update value when write is set at clock
 +    for (genvar j = 0; j < DataWidth; j++) begin
@@ -59,16 +87,57 @@ index b702a11..eeef776 100644
 +                sram[addr_i[i]][j] <= wdata_i[i][j];
 +        end
 +      end
-+    end
-+  end
-+  `endif
+     end
+   end
+-  for (genvar i = 0; i < NumPorts; i++) begin : gen_assertions
+-    assert property ( @(posedge clk_i) disable iff (!rst_ni)
+-        (req_i[i] |-> (addr_i[i] < NumWords))) else
+-      $warning("Request address %0h not mapped, port %0d, expect random write or read behavior!",
+-          addr_i[i], i);
+-  end
++  // `endif
 +
- // Validate parameters.
- // pragma translate_off
- `ifndef VERILATOR
-@@ -242,4 +265,59 @@ module tc_sram #(
- `endif
- `endif
++// Validate parameters.
++// pragma translate_off
++// `ifndef VERILATOR
++// `ifndef TARGET_SYNTHESIS
++//   initial begin: p_assertions
++//     assert ($bits(addr_i)  == NumPorts * AddrWidth) else $fatal(1, "AddrWidth problem on `addr_i`");
++//     assert ($bits(wdata_i) == NumPorts * DataWidth) else $fatal(1, "DataWidth problem on `wdata_i`");
++//     assert ($bits(be_i)    == NumPorts * BeWidth)   else $fatal(1, "BeWidth   problem on `be_i`"   );
++//     assert ($bits(rdata_o) == NumPorts * DataWidth) else $fatal(1, "DataWidth problem on `rdata_o`");
++//     assert (NumWords  >= 32'd1) else $fatal(1, "NumWords has to be > 0");
++//     assert (DataWidth >= 32'd1) else $fatal(1, "DataWidth has to be > 0");
++//     assert (ByteWidth >= 32'd1) else $fatal(1, "ByteWidth has to be > 0");
++//     assert (NumPorts  >= 32'd1) else $fatal(1, "The number of ports must be at least 1!");
++//   end
++//   initial begin: p_sim_hello
++//     if (PrintSimCfg) begin
++//       $display("#################################################################################");
++//       $display("tc_sram functional instantiated with the configuration:"                          );
++//       $display("Instance: %m"                                                                     );
++//       $display("Number of ports   (dec): %0d", NumPorts                                           );
++//       $display("Number of words   (dec): %0d", NumWords                                           );
++//       $display("Address width     (dec): %0d", AddrWidth                                          );
++//       $display("Data width        (dec): %0d", DataWidth                                          );
++//       $display("Byte width        (dec): %0d", ByteWidth                                          );
++//       $display("Byte enable width (dec): %0d", BeWidth                                            );
++//       $display("Latency Cycles    (dec): %0d", Latency                                            );
++//       $display("Simulation init   (str): %0s", SimInit                                            );
++//       $display("#################################################################################");
++//     end
++//   end
++//   for (genvar i = 0; i < NumPorts; i++) begin : gen_assertions
++//     assert property ( @(posedge clk_i) disable iff (!rst_ni)
++//         (req_i[i] |-> (addr_i[i] < NumWords))) else
++//       $warning("Request address %0h not mapped, port %0d, expect random write or read behavior!",
++//           addr_i[i], i);
++//   end
+
+-`endif
+-`endif
++// `endif
++// `endif
  // pragma translate_on
 +
 +  // Copyright lowRISC contributors.
