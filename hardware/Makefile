@@ -225,6 +225,19 @@ $(buildpath)/compile_xcelium_$(config).f: $(config_file) Makefile ../Bender.yml 
 	cd $(buildpath) && $(xcelium_cmd) $(xcelium_compile_args) $$(cat xcelium_incdirs_$(config).txt) -f compile_xcelium_$(config).f \
 		-defparam ara_tb.NrLanes=$(nr_lanes) -defparam ara_tb.VLEN=$(vlen) -elaborate -top $(library).$(top_level)
 
+# Synthesis filelist including ara_soc_wrap.sv
+.PHONY: synth_flist_wrap
+synth_flist_wrap: $(buildpath) bender $(buildpath)/synth_wrap_$(config).f $(buildpath)/synth_wrap_incdirs_$(config).txt
+
+$(buildpath)/synth_wrap_$(config).f: $(config_file) Makefile ../Bender.yml src/ara_soc_wrap.sv
+	$(BENDER) script flist $(bender_targs_simc) $(bender_defs) | grep -v '\.svh$$' > $(buildpath)/synth_wrap_$(config).f
+	# Append the wrapper explicitly so synthesis can use ara_soc_wrap as top
+	echo "$(ROOT_DIR)/src/ara_soc_wrap.sv" >> $(buildpath)/synth_wrap_$(config).f
+
+$(buildpath)/synth_wrap_incdirs_$(config).txt: $(config_file) Makefile ../Bender.yml
+	$(BENDER) script vsim $(bender_targs_simc) $(bender_defs) | grep '+incdir+' | \
+		sed 's|.*"+incdir+\$$ROOT/hardware/\(.*\)".*|-incdir ../\1|' | tr '\n' ' ' > $(buildpath)/synth_wrap_incdirs_$(config).txt
+
 # Xcelium simulation (interactive with GUI)
 .PHONY: simx
 simx: compile_xcelium
