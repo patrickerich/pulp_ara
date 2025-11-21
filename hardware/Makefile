@@ -230,7 +230,19 @@ $(buildpath)/compile_xcelium_$(config).f: $(config_file) Makefile ../Bender.yml 
 synth_flist_wrap: $(buildpath) bender $(buildpath)/synth_wrap_$(config).f $(buildpath)/synth_wrap_incdirs_$(config).txt
 
 $(buildpath)/synth_wrap_$(config).f: $(config_file) Makefile ../Bender.yml src/ara_soc_wrap.sv
-	$(BENDER) script flist $(bender_targs_simc) $(bender_defs) | grep -v '\.svh$$' > $(buildpath)/synth_wrap_$(config).f
+	# Generate a temporary raw list (no .svh, skip simulation-only and verification-only modules)
+	$(BENDER) script flist $(bender_targs_simc) $(bender_defs) \
+	  | grep -v '\.svh$$' \
+	  | grep -v 'pad_functional.sv' \
+	  | grep -v 'accel_dispatcher_ideal.sv' \
+	  | grep -v 'ara_tb.sv' \
+	  > $(buildpath)/synth_wrap_$(config).tmp
+	# Start the final flist with all package files so packages are seen first by the synthesizer
+	grep '_pkg\.sv$$' $(buildpath)/synth_wrap_$(config).tmp > $(buildpath)/synth_wrap_$(config).f || true
+	# Append all remaining SystemVerilog sources
+	grep -v '_pkg\.sv$$' $(buildpath)/synth_wrap_$(config).tmp >> $(buildpath)/synth_wrap_$(config).f || true
+	# Cleanup temporary file
+	rm $(buildpath)/synth_wrap_$(config).tmp
 	# Append the wrapper explicitly so synthesis can use ara_soc_wrap as top
 	echo "$(ROOT_DIR)/src/ara_soc_wrap.sv" >> $(buildpath)/synth_wrap_$(config).f
 
