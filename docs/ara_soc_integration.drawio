@@ -1,0 +1,85 @@
+<mxfile host="65bd71144e">
+    <diagram id="ara_soc_diagram" name="ara_soc_integration">
+        <mxGraphModel dx="507" dy="1595" grid="1" gridSize="10" guides="0" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1200" pageHeight="800" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="cva6" value="CVA6 core&#xa;(front-end + I$ + D$ + MMU)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+                    <mxGeometry x="40" y="220" width="180" height="140" as="geometry"/>
+                </mxCell>
+                <mxCell id="icache" value="L1 I$" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=10;" vertex="1" parent="cva6">
+                    <mxGeometry x="10" y="10" width="60" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="dcache" value="L1 D$" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=10;" vertex="1" parent="cva6">
+                    <mxGeometry x="10" y="100" width="60" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="mmu" value="MMU/TLB" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=10;" vertex="1" parent="cva6">
+                    <mxGeometry x="90" y="100" width="70" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="cva6_axi" value="CVA6 AXI master&#xa;(64b, post-L1 misses)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+                    <mxGeometry x="250" y="260" width="180" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="ara" value="Ara vector core&#xa;(VLSU + lanes + masku)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+                    <mxGeometry x="260" y="80" width="220" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="dwconv" value="axi_dw_converter&#xa;(64b → wide, scalar path)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+                    <mxGeometry x="470" y="260" width="200" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="mux" value="axi_mux (2→1)&#xa;(CVA6 wide + Ara wide)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+                    <mxGeometry x="720" y="220" width="200" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="xbar" value="axi_xbar&#xa;(SoC crossbar)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+                    <mxGeometry x="980" y="220" width="180" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="atop" value="axi_atop_filter&#xa;(L2, no atomics)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+                    <mxGeometry x="1240" y="200" width="180" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="axi2mem" value="axi_to_mem" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+                    <mxGeometry x="1240" y="300" width="180" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="l2" value="tc_sram L2&#xa;(1-cycle read + 1 FF rvalid)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+                    <mxGeometry x="1470" y="260" width="200" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="lat_core" value="Latency region:&#xa;CVA6 front-end + I$/D$&#xa;(miss detection, refill, restart)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontColor=#b85450;" vertex="1" parent="1">
+                    <mxGeometry x="40" y="380" width="260" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="lat1" value="Latency hotspot:&#xa;data-width conversion&#xa;(AR/R cuts inside axi_dw_converter)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontColor=#b85450;" vertex="1" parent="1">
+                    <mxGeometry x="470" y="360" width="220" height="90" as="geometry"/>
+                </mxCell>
+                <mxCell id="lat2" value="Latency hotspot:&#xa;AXI mux arbitration/spills&#xa;(scalar + vector master)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontColor=#b85450;" vertex="1" parent="1">
+                    <mxGeometry x="720" y="360" width="220" height="90" as="geometry"/>
+                </mxCell>
+                <mxCell id="lat3" value="Latency hotspot:&#xa;axi_xbar routing&#xa;(LatencyMode, pipeline stages)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontColor=#b85450;" vertex="1" parent="1">
+                    <mxGeometry x="980" y="360" width="240" height="90" as="geometry"/>
+                </mxCell>
+                <mxCell id="edge_cva6_axi" style="endArrow=block;html=1;strokeColor=#000000;" edge="1" parent="1" source="cva6" target="cva6_axi">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="edge1" style="endArrow=block;html=1;strokeColor=#000000;" edge="1" parent="1" source="cva6_axi" target="dwconv">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="edge2" style="endArrow=block;html=1;strokeColor=#000000;" edge="1" parent="1" source="dwconv" target="mux">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="edge3" style="endArrow=block;html=1;strokeColor=#000000;" edge="1" parent="1" source="ara" target="mux">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="edge4" style="endArrow=block;html=1;strokeColor=#000000;" edge="1" parent="1" source="mux" target="xbar">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="edge5" style="endArrow=block;html=1;strokeColor=#000000;" edge="1" parent="1" source="xbar" target="atop">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="edge6" style="endArrow=block;html=1;strokeColor=#000000;" edge="1" parent="1" source="atop" target="axi2mem">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="edge7" style="endArrow=block;html=1;strokeColor=#000000;" edge="1" parent="1" source="axi2mem" target="l2">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="legend" value="Legend:&#xa;Blue: CVA6 core + AXI master&#xa;Purple: Ara core&#xa;Orange/Yellow: AXI fabric&#xa;Green: L2 SRAM&#xa;Red: latency regions/hotspots&#xa;Note: L1 I$/D$ live inside CVA6; L2 is tc_sram" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;" vertex="1" parent="1">
+                    <mxGeometry x="50" y="-100" width="460" height="140" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>
