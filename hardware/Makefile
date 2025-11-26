@@ -250,6 +250,39 @@ $(buildpath)/synth_wrap_incdirs_$(config).txt: $(config_file) Makefile ../Bender
 	$(BENDER) script vsim $(bender_targs_simc) $(bender_defs) | grep '+incdir+' | \
 		sed 's|.*"+incdir+\$$ROOT/hardware/\(.*\)".*|-incdir ../\1|' | tr '\n' ' ' > $(buildpath)/synth_wrap_incdirs_$(config).txt
 
+
+# Synthesis filelist including ara_fpga_wrap.sv (FPGA-oriented top)
+.PHONY: synth_flist_fpga_wrap
+synth_flist_fpga_wrap: $(buildpath) bender $(buildpath)/synth_fpga_wrap_$(config).f $(buildpath)/synth_fpga_wrap_incdirs_$(config).txt
+
+$(buildpath)/synth_fpga_wrap_$(config).f: $(config_file) Makefile ../Bender.yml fpga/src/ara_fpga_wrap.sv
+	# Generate a temporary raw list (no .svh, skip simulation-only and verification-only modules)
+	$(BENDER) script flist $(bender_targs_simc) $(bender_defs) \
+	  | grep -v '\.svh$$' \
+	  | grep -v 'pad_functional.sv' \
+	  | grep -v 'accel_dispatcher_ideal.sv' \
+	  | grep -v 'ara_tb.sv' \
+	  | grep -v 'tech_cells_generic/src/rtl/tc_sram.sv' \
+	  | grep -v 'tech_cells_generic/src/rtl/tc_clk.sv' \
+	  > $(buildpath)/synth_fpga_wrap_$(config).tmp
+	# Start the final flist with all package files so packages are seen first by the synthesizer
+	grep '_pkg\.sv$$' $(buildpath)/synth_fpga_wrap_$(config).tmp > $(buildpath)/synth_fpga_wrap_$(config).f || true
+	# Append all remaining SystemVerilog sources
+	grep -v '_pkg\.sv$$' $(buildpath)/synth_fpga_wrap_$(config).tmp >> $(buildpath)/synth_fpga_wrap_$(config).f || true
+	# Cleanup temporary file
+	rm $(buildpath)/synth_fpga_wrap_$(config).tmp
+	# Append the FPGA wrapper explicitly so synthesis can use ara_fpga_wrap as top
+	echo "$(ROOT_DIR)/fpga/src/ara_fpga_wrap.sv" >> $(buildpath)/synth_fpga_wrap_$(config).f
+	# Append Xilinx-specific tech-cell implementations for SRAM and clock
+	echo "$(ROOT_DIR)/deps/tech_cells_generic/src/fpga/tc_sram_xilinx.sv" >> $(buildpath)/synth_fpga_wrap_$(config).f
+	echo "$(ROOT_DIR)/deps/tech_cells_generic/src/fpga/tc_clk_xilinx.sv" >> $(buildpath)/synth_fpga_wrap_$(config).f
+	# Append UART IP and common_cells FIFO explicitly
+	echo "$(ROOT_DIR)/fpga/src/uart.sv" >> $(buildpath)/synth_fpga_wrap_$(config).f
+	echo "$(ROOT_DIR)/deps/common_cells/src/fifo_v3.sv" >> $(buildpath)/synth_fpga_wrap_$(config).f
+
+$(buildpath)/synth_fpga_wrap_incdirs_$(config).txt: $(config_file) Makefile ../Bender.yml
+	$(BENDER) script vsim $(bender_targs_simc) $(bender_defs) | grep '+incdir+' | \
+		sed 's|.*"+incdir+\$$ROOT/hardware/\(.*\)".*|-incdir ../\1|' | tr '\n' ' ' > $(buildpath)/synth_fpga_wrap_incdirs_$(config).txt
 # Xcelium simulation (interactive with GUI)
 .PHONY: simx
 simx: compile_xcelium
