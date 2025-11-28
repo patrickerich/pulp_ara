@@ -39,6 +39,8 @@ module ara_soc import axi_pkg::*; import ara_pkg::*; #(
     input  logic        rst_ni,
     output logic [63:0] exit_o,
     output logic [63:0] hw_cnt_en_o,
+    // Debug request from external Debug Module (dm_top)
+    input  logic        debug_req_i,
     // Scan chain
     input  logic        scan_enable_i,
     input  logic        scan_data_i,
@@ -539,14 +541,15 @@ module ara_soc import axi_pkg::*; import ara_pkg::*; #(
 `else
   ara_system
 `endif
-  i_system (
-    .clk_i        (clk_i                    ),
-    .rst_ni       (rst_ni                   ),
-    .boot_addr_i  (DRAMBase                 ), // start fetching from DRAM
-    .hart_id_i    (hart_id                  ),
-    .scan_enable_i(1'b0                     ),
-    .scan_data_i  (1'b0                     ),
-    .scan_data_o  (/* Unconnected */        ),
+i_system (
+  .clk_i        (clk_i                    ),
+  .rst_ni       (rst_ni                   ),
+  .boot_addr_i  (DRAMBase                 ), // start fetching from DRAM
+  .hart_id_i    (hart_id                  ),
+  .scan_enable_i(1'b0                     ),
+  .scan_data_i  (1'b0                     ),
+  .scan_data_o  (/* Unconnected */        ),
+  .debug_req_i  (debug_req_i              ),
 `ifndef TARGET_GATESIM
     .axi_req_o    (system_axi_req           ),
     .axi_resp_i   (system_axi_resp          )

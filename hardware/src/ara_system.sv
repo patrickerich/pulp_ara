@@ -63,6 +63,8 @@ module ara_system import axi_pkg::*; import ara_pkg::*; #(
     input  logic                    scan_enable_i,
     input  logic                    scan_data_i,
     output logic                    scan_data_o,
+    // Debug request from external Debug Module (dm_top)
+    input  logic                    debug_req_i,
     // AXI Interface
     output system_axi_req_t         axi_req_o,
     input  system_axi_resp_t        axi_resp_i
@@ -144,7 +146,7 @@ module ara_system import axi_pkg::*; import ara_pkg::*; #(
     .irq_i            ('0                      ),
     .ipi_i            ('0                      ),
     .time_irq_i       ('0                      ),
-    .debug_req_i      ('0                      ),
+    .debug_req_i      (debug_req_i             ),
     .clic_irq_valid_i ('0                      ),
     .clic_irq_id_i    ('0                      ),
     .clic_irq_level_i ('0                      ),

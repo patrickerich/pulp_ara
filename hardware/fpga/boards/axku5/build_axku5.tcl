@@ -196,12 +196,3 @@ puts "INFO: Bitstream written to $bit_file"
 write_mem_info -force ara_axku5_2_lanes_256.mmi
 puts "INFO: Memory map info written to $mmi_file"
 
-
-# Use updatemem to merge ELF contents into the bitstream:
-# set cwd [pwd]
-#
-# updatemem \
-#   -meminfo $cwd/hardware/build/build_axku5_2_lanes_256/ara_axku5_2_lanes_256.mmi \
-#   -data    $cwd/apps/bin/hello_world_uart \
-#   -bit     $cwd/hardware/build/build_axku5_2_lanes_256/ara_axku5_2_lanes_256.bit \
-#   -out     $cwd/hardware/build/build_axku5_2_lanes_256/ara_axku5_2_lanes_256_with_app.bit
