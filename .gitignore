@@ -1,3 +1,5 @@
+temp/
+install.tar.gz
 hardware/deps
 .vscode
 work-dpi/
