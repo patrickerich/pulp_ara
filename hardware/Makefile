@@ -264,6 +264,8 @@ $(buildpath)/synth_fpga_wrap_$(config).f: $(config_file) Makefile ../Bender.yml 
 	  | grep -v 'ara_tb.sv' \
 	  | grep -v 'tech_cells_generic/src/rtl/tc_sram.sv' \
 	  | grep -v 'tech_cells_generic/src/rtl/tc_clk.sv' \
+	  | grep -v 'dmi_jtag_tap.sv' \
+	  | grep -v 'corev_apu/riscv-dbg/src/' \
 	  > $(buildpath)/synth_fpga_wrap_$(config).tmp
 	# Start the final flist with all package files so packages are seen first by the synthesizer
 	grep '_pkg\.sv$$' $(buildpath)/synth_fpga_wrap_$(config).tmp > $(buildpath)/synth_fpga_wrap_$(config).f || true
@@ -279,10 +281,40 @@ $(buildpath)/synth_fpga_wrap_$(config).f: $(config_file) Makefile ../Bender.yml 
 	# Append UART IP and common_cells FIFO explicitly
 	echo "$(ROOT_DIR)/fpga/src/uart.sv" >> $(buildpath)/synth_fpga_wrap_$(config).f
 	echo "$(ROOT_DIR)/deps/common_cells/src/fifo_v3.sv" >> $(buildpath)/synth_fpga_wrap_$(config).f
+	# Append RISC-V Debug Module + JTAG DTM (PULP riscv-dbg + lowRISC wrapper)
+	echo "$(ROOT_DIR)/fpga/pulp_riscv_dbg/src/dm_pkg.sv"           >> $(buildpath)/synth_fpga_wrap_$(config).f
+	echo "$(ROOT_DIR)/fpga/pulp_riscv_dbg/src/dm_mem.sv"           >> $(buildpath)/synth_fpga_wrap_$(config).f
+	echo "$(ROOT_DIR)/fpga/pulp_riscv_dbg/src/dm_sba.sv"           >> $(buildpath)/synth_fpga_wrap_$(config).f
+	# LowRISC prim assertions and base flop primitive (used by other prims)
+	echo "$(ROOT_DIR)/fpga/lowrisc_ip/ip/prim/rtl/prim_assert.sv"        >> $(buildpath)/synth_fpga_wrap_$(config).f
+	echo "$(ROOT_DIR)/fpga/lowrisc_ip/ip/prim/rtl/prim_flop.sv"          >> $(buildpath)/synth_fpga_wrap_$(config).f
+	# LowRISC 2-stage sync flop, clock mux and async FIFO used by dmi_cdc
+	echo "$(ROOT_DIR)/fpga/lowrisc_ip/ip/prim/rtl/prim_flop_2sync.sv"    >> $(buildpath)/synth_fpga_wrap_$(config).f
+	echo "$(ROOT_DIR)/fpga/lowrisc_ip/ip/prim/rtl/prim_clock_mux2.sv"    >> $(buildpath)/synth_fpga_wrap_$(config).f
+	echo "$(ROOT_DIR)/fpga/lowrisc_ip/ip/prim/rtl/prim_fifo_async_simple.sv" >> $(buildpath)/synth_fpga_wrap_$(config).f
+	echo "$(ROOT_DIR)/fpga/lowrisc_ip/ip/prim/rtl/prim_sync_reqack.sv"   >> $(buildpath)/synth_fpga_wrap_$(config).f
+	# DMI clock domain crossing wrapper
+	echo "$(ROOT_DIR)/fpga/pulp_riscv_dbg/src/dmi_cdc.sv"                >> $(buildpath)/synth_fpga_wrap_$(config).f
+	# Use BSCANE2-based JTAG TAP implementation for FPGA (shares config JTAG)
+	echo "$(ROOT_DIR)/fpga/pulp_riscv_dbg/src/dmi_bscane_tap.sv"         >> $(buildpath)/synth_fpga_wrap_$(config).f
+	echo "$(ROOT_DIR)/fpga/pulp_riscv_dbg/src/dmi_jtag.sv"               >> $(buildpath)/synth_fpga_wrap_$(config).f
+	# LowRISC debug module top wrapper
+	echo "$(ROOT_DIR)/fpga/src/dm_top.sv"                                >> $(buildpath)/synth_fpga_wrap_$(config).f
+	# LowRISC prim util package and FIFOs used by riscv-dbg wrapper
+	echo "$(ROOT_DIR)/fpga/lowrisc_ip/ip/prim/rtl/prim_util_pkg.sv"          >> $(buildpath)/synth_fpga_wrap_$(config).f
+	echo "$(ROOT_DIR)/fpga/lowrisc_ip/ip/prim/rtl/prim_fifo_sync_cnt.sv"     >> $(buildpath)/synth_fpga_wrap_$(config).f
+	echo "$(ROOT_DIR)/fpga/lowrisc_ip/ip/prim/rtl/prim_fifo_sync.sv"         >> $(buildpath)/synth_fpga_wrap_$(config).f
+	# Append RISC-V Debug ROMs and CSRs (PULP riscv-dbg)
+	echo "$(ROOT_DIR)/fpga/pulp_riscv_dbg/src/dm_csrs.sv"                    >> $(buildpath)/synth_fpga_wrap_$(config).f
+	echo "$(ROOT_DIR)/fpga/pulp_riscv_dbg/src/dm_obi_top.sv"                 >> $(buildpath)/synth_fpga_wrap_$(config).f
+	echo "$(ROOT_DIR)/fpga/pulp_riscv_dbg/debug_rom/debug_rom.sv"           >> $(buildpath)/synth_fpga_wrap_$(config).f
+	echo "$(ROOT_DIR)/fpga/pulp_riscv_dbg/debug_rom/debug_rom_one_scratch.sv" \
+	                                                             >> $(buildpath)/synth_fpga_wrap_$(config).f
 
 $(buildpath)/synth_fpga_wrap_incdirs_$(config).txt: $(config_file) Makefile ../Bender.yml
 	$(BENDER) script vsim $(bender_targs_simc) $(bender_defs) | grep '+incdir+' | \
 		sed 's|.*"+incdir+\$$ROOT/hardware/\(.*\)".*|-incdir ../\1|' | tr '\n' ' ' > $(buildpath)/synth_fpga_wrap_incdirs_$(config).txt
+	echo " -incdir ../fpga/lowrisc_ip/ip/prim/rtl" >> $(buildpath)/synth_fpga_wrap_incdirs_$(config).txt
 # Xcelium simulation (interactive with GUI)
 .PHONY: simx
 simx: compile_xcelium
