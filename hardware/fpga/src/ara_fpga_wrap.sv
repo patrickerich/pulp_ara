@@ -130,65 +130,64 @@ module ara_fpga_wrap
   logic [63:0] exit_o;
   logic [63:0] hw_cnt_en_o;
 
-  // ---------------------------------------------------------------------------
-  // RISC-V Debug Module (dm_top)
-  // ---------------------------------------------------------------------------
+   // ---------------------------------------------------------------------------
+   // RISC-V Debug Module (dm_top)
+   // ---------------------------------------------------------------------------
 
-  // Debug signals
-  logic          dmactive;
-  logic          debug_req;
-  // We use ndmreset (non-debug-module reset) to reset the SoC
-  // in addition to the board reset/PLL lock (see soc_rst_ni above).
+   // Debug signals
+   logic          dmactive;
+   logic          debug_req;
+   // We use ndmreset (non-debug-module reset) to reset the SoC
+   // in addition to the board reset/PLL lock (see soc_rst_ni above).
 
+   // Debug Module memory window signals (to/from ara_soc)
+   logic                      dm_device_req;
+   logic                      dm_device_we;
+   logic [AxiAddrWidth-1:0]   dm_device_addr;
+   logic [AxiDataWidth/8-1:0] dm_device_be;
+   logic [AxiDataWidth-1:0]   dm_device_wdata;
+   logic [AxiDataWidth-1:0]   dm_device_rdata;
 
-  // Debug Module (no direct system bus access wired for now; memory access
-  // will go through abstract commands executed by the core)
-  logic [63:0] dm_slave_addr, dm_slave_wdata, dm_slave_rdata;
-  logic  [7:0] dm_slave_be;
-  logic        dm_slave_req, dm_slave_we;
+   // Debug Module (no SBA host wired for now; memory access goes via
+   // execution-based debug through the debug memory window)
+   dm_top #(
+     .NrHarts     (1             ),
+     .IdcodeValue (32'h2495_11C3 ),
+     .BusWidth    (64            )
+   ) i_dm_top (
+     .clk_i          (core_clk        ),
+     .rst_ni         (rst_ni_raw      ),
+     .testmode_i     (1'b0            ),
+     .ndmreset_o     (ndmreset        ),
+     .dmactive_o     (dmactive        ),
+     .debug_req_o    ({debug_req}     ),
+     .unavailable_i  ('0              ),
 
-  logic [63:0] dm_master_add, dm_master_wdata, dm_master_r_rdata;
-  logic  [7:0] dm_master_be;
-  logic        dm_master_req, dm_master_we, dm_master_gnt, dm_master_r_valid;
+     // Debug memory device bus: connected to ara_soc DEBUG window
+     .device_req_i   (dm_device_req   ),
+     .device_we_i    (dm_device_we    ),
+     .device_addr_i  (dm_device_addr  ),
+     .device_be_i    (dm_device_be    ),
+     .device_wdata_i (dm_device_wdata ),
+     .device_rdata_o (dm_device_rdata ),
 
-  dm_top #(
-    .NrHarts        (1                ),
-    .IdcodeValue    (32'h2495_11C3    ),
-    .BusWidth       (64               )
-  ) i_dm_top (
-    .clk_i          (core_clk         ),
-    .rst_ni         (rst_ni_raw       ),
-    .testmode_i     (1'b0             ),
-    .ndmreset_o     (ndmreset         ),
-    .dmactive_o     (dmactive         ),
-    .debug_req_o    ({debug_req}      ),
-    .unavailable_i  ('0               ),
+     // System Bus Access (SBA) host bus (unused for now)
+     .host_req_o     (/* unused */    ),
+     .host_add_o     (/* unused */    ),
+     .host_we_o      (/* unused */    ),
+     .host_wdata_o   (/* unused */    ),
+     .host_be_o      (/* unused */    ),
+     .host_gnt_i     (1'b0            ),
+     .host_r_valid_i (1'b0            ),
+     .host_r_rdata_i ('0              ),
 
-    // Debug memory device bus (unused in this wrapper)
-    .device_req_i   (1'b0             ),
-    .device_we_i    (1'b0             ),
-    .device_addr_i  ('0               ),
-    .device_be_i    ('0               ),
-    .device_wdata_i ('0               ),
-    .device_rdata_o (/* unused */     ),
-
-    // System Bus Access (SBA) host bus (unused for now)
-    .host_req_o     (/* unused */     ),
-    .host_add_o     (/* unused */     ),
-    .host_we_o      (/* unused */     ),
-    .host_wdata_o   (/* unused */     ),
-    .host_be_o      (/* unused */     ),
-    .host_gnt_i     (1'b0             ),
-    .host_r_valid_i (1'b0             ),
-    .host_r_rdata_i ('0               ),
-
-    // JTAG pads (not used when BSCANE2-based dmi_jtag_tap is present)
-    .tck_i          (1'b0             ),
-    .tms_i          (1'b0             ),
-    .trst_ni        (1'b1             ),
-    .td_i           (1'b0             ),
-    .td_o           (/* unused */     )
-  );
+     // JTAG pads (not used when BSCANE2-based DTM is present)
+     .tck_i          (1'b0            ),
+     .tms_i          (1'b0            ),
+     .trst_ni        (1'b1            ),
+     .td_i           (1'b0            ),
+     .td_o           (/* unused */    )
+   );
 
   // ---------------------------------------------------------------------------
   // UART APB signals between ara_soc and UART IP
@@ -220,25 +219,32 @@ module ara_fpga_wrap
     .AxiRespDelay (AxiRespDelay ),
     .L2NumWords   (L2NumWords   )
   ) i_ara_soc (
-    .clk_i         (core_clk      ),
-    .rst_ni        (soc_rst_ni    ),
-    .exit_o        (exit_o        ),
-    .hw_cnt_en_o   (hw_cnt_en_o   ),
+    .clk_i           (core_clk        ),
+    .rst_ni          (soc_rst_ni      ),
+    .exit_o          (exit_o          ),
+    .hw_cnt_en_o     (hw_cnt_en_o     ),
     // Debug request from external Debug Module
-    .debug_req_i   (debug_req     ),
-    // No external scan chain on FPGA
-    .scan_enable_i (1'b0          ),
-    .scan_data_i   (1'b0          ),
-    .scan_data_o   (/* unused */  ),
+    .debug_req_i     (debug_req       ),
+    // Scan chain
+    .scan_enable_i   (1'b0            ),
+    .scan_data_i     (1'b0            ),
+    .scan_data_o     (/* unused */    ),
     // UART APB interface
-    .uart_penable_o(uart_penable  ),
-    .uart_pwrite_o (uart_pwrite   ),
-    .uart_paddr_o  (uart_paddr    ),
-    .uart_psel_o   (uart_psel     ),
-    .uart_pwdata_o (uart_pwdata   ),
-    .uart_prdata_i (uart_prdata   ),
-    .uart_pready_i (uart_pready   ),
-    .uart_pslverr_i(uart_pslverr  )
+    .uart_penable_o  (uart_penable    ),
+    .uart_pwrite_o   (uart_pwrite     ),
+    .uart_paddr_o    (uart_paddr      ),
+    .uart_psel_o     (uart_psel       ),
+    .uart_pwdata_o   (uart_pwdata     ),
+    .uart_prdata_i   (uart_prdata     ),
+    .uart_pready_i   (uart_pready     ),
+    .uart_pslverr_i  (uart_pslverr    ),
+    // Debug Module memory window (DEBUG AXI slave)
+    .dm_device_req_o   (dm_device_req   ),
+    .dm_device_we_o    (dm_device_we    ),
+    .dm_device_addr_o  (dm_device_addr  ),
+    .dm_device_be_o    (dm_device_be    ),
+    .dm_device_wdata_o (dm_device_wdata ),
+    .dm_device_rdata_i (dm_device_rdata )
   );
 
   // ---------------------------------------------------------------------------

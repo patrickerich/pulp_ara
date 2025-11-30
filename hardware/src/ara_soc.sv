@@ -53,7 +53,14 @@ module ara_soc import axi_pkg::*; import ara_pkg::*; #(
     output logic [31:0] uart_pwdata_o,
     input  logic [31:0] uart_prdata_i,
     input  logic        uart_pready_i,
-    input  logic        uart_pslverr_i
+    input  logic        uart_pslverr_i,
+    // Debug Module memory window (connected to external DM)
+    output logic                      dm_device_req_o,
+    output logic                      dm_device_we_o,
+    output logic [AxiAddrWidth-1:0]   dm_device_addr_o,
+    output logic [AxiDataWidth/8-1:0] dm_device_be_o,
+    output logic [AxiDataWidth-1:0]   dm_device_wdata_o,
+    input  logic [AxiDataWidth-1:0]   dm_device_rdata_i
   );
 
   `include "axi/assign.svh"
@@ -68,23 +75,27 @@ module ara_soc import axi_pkg::*; import ara_pkg::*; #(
 
   localparam NrAXIMasters = 1; // Actually masters, but slaves on the crossbar
 
-  typedef enum int unsigned {
-    L2MEM = 0,
-    UART  = 1,
-    CTRL  = 2
-  } axi_slaves_e;
-  localparam NrAXISlaves = CTRL + 1;
+   typedef enum int unsigned {
+     L2MEM = 0,
+     UART  = 1,
+     CTRL  = 2,
+     DEBUG = 3
+   } axi_slaves_e;
+   localparam NrAXISlaves = DEBUG + 1;
 
   // Memory Map
   // 1GByte of DDR (split between two chips on Genesys2)
-  localparam logic [63:0] DRAMLength = 64'h40000000;
-  localparam logic [63:0] UARTLength = 64'h1000;
-  localparam logic [63:0] CTRLLength = 64'h1000;
+  localparam logic [63:0] DRAMLength  = 64'h40000000;
+  localparam logic [63:0] UARTLength  = 64'h1000;
+  localparam logic [63:0] CTRLLength  = 64'h1000;
+  localparam logic [63:0] DebugLength = 64'h1000;
 
   typedef enum logic [63:0] {
-    DRAMBase = 64'h8000_0000,
-    UARTBase = 64'hC000_0000,
-    CTRLBase = 64'hD000_0000
+    DRAMBase  = 64'h8000_0000,
+    UARTBase  = 64'hC000_0000,
+    CTRLBase  = 64'hD000_0000,
+    // Place Debug window at same base as Ibex demo system
+    DebugBase = 64'h1A11_0000
   } soc_bus_start_e;
 
   ///////////
@@ -152,9 +163,10 @@ module ara_soc import axi_pkg::*; import ara_pkg::*; #(
 
   axi_pkg::xbar_rule_64_t [NrAXISlaves-1:0] routing_rules;
   assign routing_rules = '{
-    '{idx: CTRL, start_addr: CTRLBase, end_addr: CTRLBase + CTRLLength},
-    '{idx: UART, start_addr: UARTBase, end_addr: UARTBase + UARTLength},
-    '{idx: L2MEM, start_addr: DRAMBase, end_addr: DRAMBase + DRAMLength}
+    '{idx: DEBUG, start_addr: DebugBase, end_addr: DebugBase + DebugLength},
+    '{idx: CTRL,  start_addr: CTRLBase,  end_addr: CTRLBase + CTRLLength},
+    '{idx: UART,  start_addr: UARTBase,  end_addr: UARTBase + UARTLength},
+    '{idx: L2MEM, start_addr: DRAMBase,  end_addr: DRAMBase + DRAMLength}
   };
 
   axi_xbar #(
@@ -262,6 +274,42 @@ module ara_soc import axi_pkg::*; import ara_pkg::*; #(
 
   // One-cycle latency
   `FF(l2_rvalid, l2_req, 1'b0);
+
+  //////////////////////////////
+  //  Debug Module memory win //
+  //////////////////////////////
+
+  // Map the Debug Module's memory window into the SoC AXI address space at
+  // DebugBase .. DebugBase + DebugLength, and expose a simple request/response
+  // interface to the external debug module (dm_top).
+  logic dm_device_rvalid;
+
+  axi_to_mem #(
+    .AddrWidth (AxiAddrWidth   ),
+    .DataWidth (AxiDataWidth   ),
+    .IdWidth   (AxiSocIdWidth  ),
+    .NumBanks  (1              ),
+    .axi_req_t (soc_wide_req_t ),
+    .axi_resp_t(soc_wide_resp_t)
+  ) i_axi_to_dm_mem (
+    .clk_i       (clk_i                      ),
+    .rst_ni      (rst_ni                     ),
+    .axi_req_i   (periph_wide_axi_req[DEBUG] ),
+    .axi_resp_o  (periph_wide_axi_resp[DEBUG]),
+    .mem_req_o   (dm_device_req_o            ),
+    .mem_gnt_i   (1'b1                       ), // always ready
+    .mem_we_o    (dm_device_we_o             ),
+    .mem_addr_o  (dm_device_addr_o           ),
+    .mem_strb_o  (dm_device_be_o             ),
+    .mem_wdata_o (dm_device_wdata_o          ),
+    .mem_rdata_i (dm_device_rdata_i          ),
+    .mem_rvalid_i(dm_device_rvalid           ),
+    .mem_atop_o  (/* Unused */               ),
+    .busy_o      (/* Unused */               )
+  );
+
+  // Generate a one-cycle read latency for the debug memory window.
+  `FF(dm_device_rvalid, dm_device_req_o & ~dm_device_we_o, 1'b0);
 
   ////////////
   //  UART  //
@@ -460,7 +508,7 @@ module ara_soc import axi_pkg::*; import ara_pkg::*; #(
     cfg.RVD                   = FPUSupport[5];
     cfg.XF16ALT               = FPUSupport[2];
     cfg.XF8                   = FPUSupport[1];
-//  cfg.XF8ALT                = FPUSupport[0]; // Not supported by OpenHW Group's CVFPU
+ //  cfg.XF8ALT                = FPUSupport[0]; // Not supported by OpenHW Group's CVFPU
     cfg.NrPMPEntries          = 0;
     // idempotent region
     cfg.NrNonIdempotentRules  = 2;
@@ -468,12 +516,23 @@ module ara_soc import axi_pkg::*; import ara_pkg::*; #(
     cfg.NonIdempotentLength   = {UARTLength, CTRLLength};
     cfg.NrExecuteRegionRules  = 3;
     //                          DRAM;       Boot ROM;   Debug Module
-    cfg.ExecuteRegionAddrBase = {DRAMBase,   64'h1_0000, 64'h0};
+    cfg.ExecuteRegionAddrBase = {DRAMBase,   64'h1_0000, DebugBase};
     cfg.ExecuteRegionLength   = {DRAMLength, 64'h10000,  64'h1000};
     // cached region
     cfg.NrCachedRegionRules   = 1;
     cfg.CachedRegionAddrBase  = {DRAMBase};
     cfg.CachedRegionLength    = {DRAMLength};
+
+    // Debug module location (must match Ara SoC DEBUG window and PULP dm_mem)
+    // - Debug window is mapped at DebugBase .. DebugBase + DebugLength.
+    //   Here DebugBase = 0x1A11_0000, matching the Ibex demo system.
+    // - CVA6 expects HaltAddress/ExceptionAddress as OFFSETS from DmBaseAddress.
+    //   Use the standard offsets (0x800 / 0x808) and let DebugBase provide the absolute base.
+    cfg.DebugEn               = 1'b1;
+    cfg.DmBaseAddress         = DebugBase;
+    cfg.HaltAddress           = 64'h800;
+    cfg.ExceptionAddress      = 64'h808;
+
     // Return modified config
     return cfg;
   endfunction
