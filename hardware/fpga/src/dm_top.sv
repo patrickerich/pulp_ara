@@ -208,7 +208,6 @@ module dm_top #(
   ) i_dm_mem (
     .clk_i                   ( clk_i                 ),
     .rst_ni                  ( rst_ni                ),
-    .ndmreset_i              ( ndmreset              ),
     .debug_req_o             ( debug_req_o           ),
     .hartsel_i               ( hartsel               ),
     .haltreq_i               ( haltreq               ),
@@ -233,31 +232,31 @@ module dm_top #(
     .rdata_o                 ( device_rdata_o        )
   );
 
-  // JTAG TAP
+  // JTAG TAP (BSCANE2-based via pulp dmi_jtag_tap/dmi_bscane_tap)
   dmi_jtag #(
     .IdcodeValue ( IdcodeValue )
   ) dap (
-    .clk_i            (clk_i        ),
-    .rst_ni           (rst_ni       ),
-    .testmode_i       (testmode_i   ),
-    .test_rst_ni      (1'b1         ),
+    .clk_i            ( clk_i         ),
+    .rst_ni           ( rst_ni        ),
+    .testmode_i       ( testmode_i    ),
+    .test_rst_ni      ( 1'b1          ),
 
-    .dmi_rst_no       (dmi_rst_n    ),
-    .dmi_req_o        (dmi_req      ),
-    .dmi_req_valid_o  (dmi_req_valid),
-    .dmi_req_ready_i  (dmi_req_ready),
+    .dmi_rst_no       ( dmi_rst_n     ),
+    .dmi_req_o        ( dmi_req       ),
+    .dmi_req_valid_o  ( dmi_req_valid ),
+    .dmi_req_ready_i  ( dmi_req_ready ),
 
-    .dmi_resp_i       (dmi_rsp      ),
-    .dmi_resp_ready_o (dmi_rsp_ready),
-    .dmi_resp_valid_i (dmi_rsp_valid),
+    .dmi_resp_i       ( dmi_rsp       ),
+    .dmi_resp_ready_o ( dmi_rsp_ready ),
+    .dmi_resp_valid_i ( dmi_rsp_valid ),
 
-    //JTAG
-    .tck_i,
-    .tms_i,
-    .trst_ni,
-    .td_i,
-    .td_o,
-    .tdo_oe_o ()
+    // JTAG pads (logically present but ignored by dmi_bscane_tap/BSCANE2)
+    .tck_i            ( tck_i         ),
+    .tms_i            ( tms_i         ),
+    .trst_ni          ( trst_ni       ),
+    .td_i             ( td_i          ),
+    .td_o             ( td_o          ),
+    .tdo_oe_o         ( /* unused */  )
   );
 
 endmodule

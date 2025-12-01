@@ -148,8 +148,19 @@ module ara_fpga_wrap
    logic [AxiDataWidth-1:0]   dm_device_wdata;
    logic [AxiDataWidth-1:0]   dm_device_rdata;
 
-   // Debug Module (no SBA host wired for now; memory access goes via
-   // execution-based debug through the debug memory window)
+   // System Bus Access (SBA) host bus signals between dm_top and ara_soc
+   logic                      dm_host_req;
+   logic [AxiAddrWidth-1:0]   dm_host_addr;
+   logic                      dm_host_we;
+   logic [AxiDataWidth-1:0]   dm_host_wdata;
+   logic [AxiDataWidth/8-1:0] dm_host_be;
+   logic                      dm_host_gnt;
+   logic                      dm_host_r_valid;
+   logic [AxiDataWidth-1:0]   dm_host_r_rdata;
+
+   // Debug Module:
+   // - Execution-based debug via DEBUG memory window (device_*).
+   // - System Bus Access (SBA) via host_* for full address space access.
    dm_top #(
      .NrHarts     (1             ),
      .IdcodeValue (32'h2495_11C3 ),
@@ -171,15 +182,15 @@ module ara_fpga_wrap
      .device_wdata_i (dm_device_wdata ),
      .device_rdata_o (dm_device_rdata ),
 
-     // System Bus Access (SBA) host bus (unused for now)
-     .host_req_o     (/* unused */    ),
-     .host_add_o     (/* unused */    ),
-     .host_we_o      (/* unused */    ),
-     .host_wdata_o   (/* unused */    ),
-     .host_be_o      (/* unused */    ),
-     .host_gnt_i     (1'b0            ),
-     .host_r_valid_i (1'b0            ),
-     .host_r_rdata_i ('0              ),
+     // System Bus Access (SBA) host bus: full address space access
+     .host_req_o     (dm_host_req     ),
+     .host_add_o     (dm_host_addr    ),
+     .host_we_o      (dm_host_we      ),
+     .host_wdata_o   (dm_host_wdata   ),
+     .host_be_o      (dm_host_be      ),
+     .host_gnt_i     (dm_host_gnt     ),
+     .host_r_valid_i (dm_host_r_valid ),
+     .host_r_rdata_i (dm_host_r_rdata ),
 
      // JTAG pads (not used when BSCANE2-based DTM is present)
      .tck_i          (1'b0            ),
@@ -244,7 +255,16 @@ module ara_fpga_wrap
     .dm_device_addr_o  (dm_device_addr  ),
     .dm_device_be_o    (dm_device_be    ),
     .dm_device_wdata_o (dm_device_wdata ),
-    .dm_device_rdata_i (dm_device_rdata )
+    .dm_device_rdata_i (dm_device_rdata ),
+    // System Bus Access (SBA) for full address space access
+    .sba_req_i         (dm_host_req     ),
+    .sba_we_i          (dm_host_we      ),
+    .sba_addr_i        (dm_host_addr    ),
+    .sba_be_i          (dm_host_be      ),
+    .sba_wdata_i       (dm_host_wdata   ),
+    .sba_gnt_o         (dm_host_gnt     ),
+    .sba_r_valid_o     (dm_host_r_valid ),
+    .sba_r_rdata_o     (dm_host_r_rdata )
   );
 
   // ---------------------------------------------------------------------------
