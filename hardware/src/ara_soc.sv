@@ -60,7 +60,16 @@ module ara_soc import axi_pkg::*; import ara_pkg::*; #(
     output logic [AxiAddrWidth-1:0]   dm_device_addr_o,
     output logic [AxiDataWidth/8-1:0] dm_device_be_o,
     output logic [AxiDataWidth-1:0]   dm_device_wdata_o,
-    input  logic [AxiDataWidth-1:0]   dm_device_rdata_i
+    input  logic [AxiDataWidth-1:0]   dm_device_rdata_i,
+    // System Bus Access (SBA) host bus from external Debug Module
+    input  logic                      sba_req_i,
+    input  logic                      sba_we_i,
+    input  logic [AxiAddrWidth-1:0]   sba_addr_i,
+    input  logic [AxiDataWidth/8-1:0] sba_be_i,
+    input  logic [AxiDataWidth-1:0]   sba_wdata_i,
+    output logic                      sba_gnt_o,
+    output logic                      sba_r_valid_o,
+    output logic [AxiDataWidth-1:0]   sba_r_rdata_o
   );
 
   `include "axi/assign.svh"
@@ -73,7 +82,7 @@ module ara_soc import axi_pkg::*; import ara_pkg::*; #(
   //  Memory Regions  //
   //////////////////////
 
-  localparam NrAXIMasters = 1; // Actually masters, but slaves on the crossbar
+  localparam NrAXIMasters = 1; // CVA6/Ara only
 
    typedef enum int unsigned {
      L2MEM = 0,
@@ -112,6 +121,7 @@ module ara_soc import axi_pkg::*; import ara_pkg::*; #(
   localparam AxiSocIdWidth  = AxiIdWidth - $clog2(NrAXIMasters);
   localparam AxiCoreIdWidth = AxiSocIdWidth - 1;
 
+
   // Internal types
   typedef logic [AxiNarrowDataWidth-1:0] axi_narrow_data_t;
   typedef logic [AxiNarrowStrbWidth-1:0] axi_narrow_strb_t;
@@ -128,12 +138,15 @@ module ara_soc import axi_pkg::*; import ara_pkg::*; #(
   `AXI_TYPEDEF_ALL(soc_wide, axi_addr_t, axi_soc_id_t, axi_data_t, axi_strb_t, axi_user_t)
   `AXI_LITE_TYPEDEF_ALL(soc_narrow_lite, axi_addr_t, axi_narrow_data_t, axi_narrow_strb_t)
 
+
+
   // Buses
   system_req_t  system_axi_req_spill;
   system_resp_t system_axi_resp_spill;
   system_resp_t system_axi_resp_spill_del;
   system_req_t  system_axi_req;
   system_resp_t system_axi_resp;
+
 
   soc_wide_req_t    [NrAXISlaves-1:0] periph_wide_axi_req;
   soc_wide_resp_t   [NrAXISlaves-1:0] periph_wide_axi_resp;
@@ -220,6 +233,16 @@ module ara_soc import axi_pkg::*; import ara_pkg::*; #(
     .mst_resp_i(l2mem_wide_axi_resp_wo_atomics)
   );
 
+  // L2 SRAM signals with arbiter for AXI + SBA access
+  logic                      l2_axi_req;
+  logic                      l2_axi_we;
+  logic [AxiAddrWidth-1:0]   l2_axi_addr;
+  logic [AxiDataWidth/8-1:0] l2_axi_be;
+  logic [AxiDataWidth-1:0]   l2_axi_wdata;
+  logic [AxiDataWidth-1:0]   l2_axi_rdata;
+  logic                      l2_axi_rvalid;
+
+  // Final arbitrated signals to SRAM
   logic                      l2_req;
   logic                      l2_we;
   logic [AxiAddrWidth-1:0]   l2_addr;
@@ -240,14 +263,14 @@ module ara_soc import axi_pkg::*; import ara_pkg::*; #(
     .rst_ni      (rst_ni                        ),
     .axi_req_i   (l2mem_wide_axi_req_wo_atomics ),
     .axi_resp_o  (l2mem_wide_axi_resp_wo_atomics),
-    .mem_req_o   (l2_req                        ),
-    .mem_gnt_i   (l2_req                        ), // Always available
-    .mem_we_o    (l2_we                         ),
-    .mem_addr_o  (l2_addr                       ),
-    .mem_strb_o  (l2_be                         ),
-    .mem_wdata_o (l2_wdata                      ),
-    .mem_rdata_i (l2_rdata                      ),
-    .mem_rvalid_i(l2_rvalid                     ),
+    .mem_req_o   (l2_axi_req                    ),
+    .mem_gnt_i   (1'b1                          ), // Arbiter always grants
+    .mem_we_o    (l2_axi_we                     ),
+    .mem_addr_o  (l2_axi_addr                   ),
+    .mem_strb_o  (l2_axi_be                     ),
+    .mem_wdata_o (l2_axi_wdata                  ),
+    .mem_rdata_i (l2_axi_rdata                  ),
+    .mem_rvalid_i(l2_axi_rvalid                 ),
     .mem_atop_o  (/* Unused */                  ),
     .busy_o      (/* Unused */                  )
   );
@@ -272,7 +295,48 @@ module ara_soc import axi_pkg::*; import ara_pkg::*; #(
   assign l2_rdata = '0;
 `endif
 
-  // One-cycle latency
+  // Simple arbiter: SBA has priority when accessing L2
+  logic sba_accessing_l2;
+  logic [AxiAddrWidth-1:0] sba_l2_offset;
+
+  // Check if SBA is accessing L2 range (0x80000000 - 0xBFFFFFFF)
+  assign sba_accessing_l2 = sba_req_i &&
+                            (sba_addr_i >= DRAMBase) &&
+                            (sba_addr_i < (DRAMBase + DRAMLength));
+
+  // Calculate offset from DRAM base for SBA
+  assign sba_l2_offset = sba_addr_i - DRAMBase;
+
+  // Arbiter: SBA has priority
+  always_comb begin
+    if (sba_accessing_l2) begin
+      // SBA access to L2
+      l2_req   = sba_req_i;
+      l2_we    = sba_we_i;
+      l2_addr  = sba_l2_offset;  // Use offset, not absolute address
+      l2_be    = sba_be_i;
+      l2_wdata = sba_wdata_i;
+      l2_axi_rdata = l2_rdata;
+      l2_axi_rvalid = 1'b0;  // Block AXI when SBA active
+      sba_gnt_o = 1'b1;
+      sba_r_valid_o = l2_rvalid;
+      sba_r_rdata_o = l2_rdata;
+    end else begin
+      // AXI access to L2
+      l2_req   = l2_axi_req;
+      l2_we    = l2_axi_we;
+      l2_addr  = l2_axi_addr;
+      l2_be    = l2_axi_be;
+      l2_wdata = l2_axi_wdata;
+      l2_axi_rdata = l2_rdata;
+      l2_axi_rvalid = l2_rvalid;
+      sba_gnt_o = 1'b0;
+      sba_r_valid_o = 1'b0;
+      sba_r_rdata_o = '0;
+    end
+  end
+
+  // One-cycle latency for SRAM
   `FF(l2_rvalid, l2_req, 1'b0);
 
   //////////////////////////////

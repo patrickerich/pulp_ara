@@ -49,6 +49,22 @@ module dmi_jtag #(
   } dmi_error_e;
   dmi_error_e error_d, error_q;
 
+  // Local DTMCS type and status codes, adapted to work with CVA6's dm_pkg
+  typedef struct packed {
+    logic [31:18] zero1;
+    logic         dmihardreset;
+    logic         dmireset;
+    logic         zero0;
+    logic [14:12] idle;
+    logic [11:10] dmistat;
+    logic [9:4]   abits;
+    logic [3:0]   version;
+  } dm_dtmcs_t;
+
+  // Local constants for DTM error/busy encodings (spec 0.13)
+  localparam logic [1:0] DTM_ERR  = 2'h2;
+  localparam logic [1:0] DTM_BUSY = 2'h3;
+
   logic tck;
   logic jtag_dmi_clear; // Synchronous reset of DMI triggered by TestLogicReset in
                         // jtag TAP
@@ -66,7 +82,7 @@ module dmi_jtag #(
   // Debug Module Control and Status
   // -------------------------------
 
-  dm::dtmcs_t dtmcs_d, dtmcs_q;
+  dm_dtmcs_t dtmcs_d, dtmcs_q;
 
   always_comb begin
     dtmcs_d = dtmcs_q;
@@ -184,11 +200,11 @@ module dmi_jtag #(
               dm::DTM_SUCCESS: begin
                 data_d = dmi_resp.data;
               end
-              dm::DTM_ERR: begin
+              DTM_ERR: begin
                 data_d = 32'hDEAD_BEEF;
                 error_dmi_op_failed = 1'b1;
               end
-              dm::DTM_BUSY: begin
+              DTM_BUSY: begin
                 data_d = 32'hB051_B051;
                 error_dmi_busy = 1'b1;
               end
@@ -212,8 +228,8 @@ module dmi_jtag #(
           // got a valid answer go back to idle
           if (dmi_resp_valid) begin
             unique case (dmi_resp.resp)
-              dm::DTM_ERR: error_dmi_op_failed = 1'b1;
-              dm::DTM_BUSY: error_dmi_busy = 1'b1;
+              DTM_ERR:  error_dmi_op_failed = 1'b1;
+              DTM_BUSY: error_dmi_busy      = 1'b1;
               default: ;
             endcase
             state_d = Idle;
