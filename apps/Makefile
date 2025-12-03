@@ -143,6 +143,7 @@ bin/$1$(BIN_SUFFIX): $1/data.S.o $(addsuffix .o, $(shell find -L $(1) -name "*.c
 	$$(APP_CC) -Iinclude $(APP_CCFLAGS) -o $$@ $$(addsuffix .o, $$(shell find -L $(1) -name "*.c" -o -name "*.cpp" -o -name "*.S")) $(APP_RUNTIME) $$(APP_LDFLAGS)
 	$$(RISCV_OBJDUMP) $$(RISCV_OBJDUMP_FLAGS) -D $$@ > $$@.dump
 	$$(RISCV_STRIP) $$@ -S --strip-unneeded
+	$$(RISCV_OBJCOPY) -O binary $$@ $$@.bin
 endef
 $(foreach app,$(APPS),$(eval $(call app_compile_template,$(app))))
 
@@ -222,6 +223,7 @@ clean: riscv_tests_spike_clean benchmarks_clean
 	rm -vf $(RUNTIME_GCC)
 	rm -vf $(RUNTIME_LLVM)
 	rm -vf $(RUNTIME_SPIKE)
+	rm -vf bin/*.bin
 	for app in $(APPS); do cd $(APPS_DIR)/$${app} && rm -f $$(find . -name "*.c.o*" -o -name "*.S.o*") && cd ..; done
 	# Aggressively purge all object files to avoid mixing LLVM and GCC-compiled artifacts
 	cd $(APPS_DIR) && find . -type f \( -name "*.o" -o -name "*.o.spike" \) -print -delete

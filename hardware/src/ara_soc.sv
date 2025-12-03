@@ -36,7 +36,13 @@ module ara_soc import axi_pkg::*; import ara_pkg::*; #(
     localparam type                   axi_id_t     = logic [AxiIdWidth-1:0]
   ) (
     input  logic        clk_i,
+    // SoC-level reset: resets fabric, L2 SRAM, peripherals, and debug window.
+    // This is driven by the board/PLL reset and is NOT gated by ndmreset.
     input  logic        rst_ni,
+    // Core-level reset: used only for the CVA6+Ara core complex (ara_system).
+    // At the FPGA top, this is typically gated by ndmreset so that SBA can
+    // keep accessing memory while the core is held in reset.
+    input  logic        core_rst_ni_i,
     output logic [63:0] exit_o,
     output logic [63:0] hw_cnt_en_o,
     // Debug request from external Debug Module (dm_top)
@@ -298,6 +304,8 @@ module ara_soc import axi_pkg::*; import ara_pkg::*; #(
   // Simple arbiter: SBA has priority when accessing L2
   logic sba_accessing_l2;
   logic [AxiAddrWidth-1:0] sba_l2_offset;
+  // Track which master issued the last L2 request (SBA vs AXI)
+  logic last_req_sba;
 
   // Check if SBA is accessing L2 range (0x80000000 - 0xBFFFFFFF)
   assign sba_accessing_l2 = sba_req_i &&
@@ -307,7 +315,7 @@ module ara_soc import axi_pkg::*; import ara_pkg::*; #(
   // Calculate offset from DRAM base for SBA
   assign sba_l2_offset = sba_addr_i - DRAMBase;
 
-  // Arbiter: SBA has priority
+  // Arbiter: SBA has priority for L2. Request goes either to SBA or AXI.
   always_comb begin
     if (sba_accessing_l2) begin
       // SBA access to L2
@@ -316,11 +324,7 @@ module ara_soc import axi_pkg::*; import ara_pkg::*; #(
       l2_addr  = sba_l2_offset;  // Use offset, not absolute address
       l2_be    = sba_be_i;
       l2_wdata = sba_wdata_i;
-      l2_axi_rdata = l2_rdata;
-      l2_axi_rvalid = 1'b0;  // Block AXI when SBA active
       sba_gnt_o = 1'b1;
-      sba_r_valid_o = l2_rvalid;
-      sba_r_rdata_o = l2_rdata;
     end else begin
       // AXI access to L2
       l2_req   = l2_axi_req;
@@ -328,16 +332,29 @@ module ara_soc import axi_pkg::*; import ara_pkg::*; #(
       l2_addr  = l2_axi_addr;
       l2_be    = l2_axi_be;
       l2_wdata = l2_axi_wdata;
-      l2_axi_rdata = l2_rdata;
-      l2_axi_rvalid = l2_rvalid;
       sba_gnt_o = 1'b0;
-      sba_r_valid_o = 1'b0;
-      sba_r_rdata_o = '0;
     end
   end
 
   // One-cycle latency for SRAM
   `FF(l2_rvalid, l2_req, 1'b0);
+
+  // Record which master issued the last L2 request so we can route the response.
+  always_ff @(posedge clk_i or negedge rst_ni) begin
+    if (!rst_ni) begin
+      last_req_sba <= 1'b0;
+    end else if (l2_req) begin
+      // sba_accessing_l2 is true iff the current request comes from SBA.
+      last_req_sba <= sba_accessing_l2;
+    end
+  end
+
+  // Route SRAM responses back to either SBA or AXI depending on who launched the request.
+  assign sba_r_valid_o = last_req_sba & l2_rvalid;
+  assign sba_r_rdata_o = last_req_sba ? l2_rdata : '0;
+
+  assign l2_axi_rvalid = (~last_req_sba) & l2_rvalid;
+  assign l2_axi_rdata  = l2_rdata;
 
   //////////////////////////////
   //  Debug Module memory win //
@@ -666,7 +683,10 @@ module ara_soc import axi_pkg::*; import ara_pkg::*; #(
 `endif
 i_system (
   .clk_i        (clk_i                    ),
-  .rst_ni       (rst_ni                   ),
+  // Only reset the core complex (CVA6+Ara) with the core-level reset.
+  // This allows the debug module's ndmreset to hold the core in reset
+  // while leaving the SoC fabric + L2 SRAM accessible for SBA.
+  .rst_ni       (core_rst_ni_i            ),
   .boot_addr_i  (DRAMBase                 ), // start fetching from DRAM
   .hart_id_i    (hart_id                  ),
   .scan_enable_i(1'b0                     ),

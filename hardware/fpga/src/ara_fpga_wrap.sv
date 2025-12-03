@@ -231,7 +231,11 @@ module ara_fpga_wrap
     .L2NumWords   (L2NumWords   )
   ) i_ara_soc (
     .clk_i           (core_clk        ),
-    .rst_ni          (soc_rst_ni      ),
+    // SoC fabric + L2 SRAM reset: only from board/PLL reset.
+    // This keeps SBA and memory accessible even when ndmreset is asserted.
+    .rst_ni          (rst_ni_raw      ),
+    // Core (CVA6+Ara) reset: gated by ndmreset via soc_rst_ni.
+    .core_rst_ni_i   (soc_rst_ni      ),
     .exit_o          (exit_o          ),
     .hw_cnt_en_o     (hw_cnt_en_o     ),
     // Debug request from external Debug Module
