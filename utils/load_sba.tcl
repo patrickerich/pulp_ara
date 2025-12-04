@@ -71,19 +71,23 @@ proc load_sba {filename base_addr_hex} {
     }
 
     # Helper: wait until SBA is idle (sbbusy == 0) before accessing SBData.
-    # This avoids reading SBData0 while the previous SBA transaction is still
+    # This avoids reading SBData while the previous SBA transaction is still
     # in progress, which would cause sbbusyerror to be set and return stale data.
+    # In dm_pkg.sv, sbbusy is bit 21 of SBCS.
     proc wait_sba_idle {addr} {
-        while {1} {
+        set SBBUSY_MASK 0x00200000
+        set max_iter 1000
+        for {set i 0} {$i < $max_iter} {incr i} {
             set sbcs [riscv dmi_read 0x38]
-            set sbbusy [expr {($sbcs >> 22) & 0x1}]
-            if {$sbbusy == 0} {
+            if {($sbcs & $SBBUSY_MASK) == 0} {
                 return $sbcs
             }
         }
+        echo [format "SBA still busy after %d polls at 0x%08x, SBCS = 0x%08x" $max_iter $addr $sbcs]
+        return $sbcs
     }
 
-    # Main loop: for each 32-bit word
+    # Main loop: for each 32-bit word (mirror the manual working 32-bit pattern)
     for {set i 0} {$i < $len} {incr i 4} {
         set word_index [expr {$i / 4}]
         set addr       [expr {$base_addr + $i}]
@@ -94,9 +98,8 @@ proc load_sba {filename base_addr_hex} {
         riscv dmi_write 0x39 [expr {$addr & 0xffffffff}]
         riscv dmi_write 0x3a [expr {($addr >> 32) & 0xffffffff}]
 
-        # 2) Write SBData0 (low 32 bits). For a 64-bit BusWidth DM, this still
-        # performs a 32-bit access as per the DM's SBA implementation, which we
-        # know works from your manual tests.
+        # 2) Write SBData0 (low 32 bits). This matches the manual sequence that
+        #    you already verified works reliably for 32-bit accesses.
         riscv dmi_write 0x3c $word
 
         # 3) Trigger a read by setting the address again (sbreadonaddr=1)
@@ -104,8 +107,7 @@ proc load_sba {filename base_addr_hex} {
         riscv dmi_write 0x3a [expr {($addr >> 32) & 0xffffffff}]
 
         # 4) Wait for SBA to become idle before reading back, to avoid
-        #    sbbusyerror/stale data on the first (or any) transfer.
-        #    Pass the current address so we can see which access we waited for.
+        #    sbbusyerror/stale data on any transfer.
         set _sbcs_after [wait_sba_idle $addr]
 
         # 5) Read back from SBData0
