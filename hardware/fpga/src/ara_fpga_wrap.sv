@@ -45,7 +45,14 @@ module ara_fpga_wrap
 
   // Board UART pins
   output logic        uart_tx,
-  input  logic        uart_rx
+  input  logic        uart_rx,
+
+  // External JTAG pod (separate from Xilinx configuration JTAG)
+  input  logic        jtag_tck,
+  input  logic        jtag_tms,
+  input  logic        jtag_trst_n,
+  input  logic        jtag_tdi,
+  output logic        jtag_tdo
 );
 
   // ---------------------------------------------------------------------------
@@ -131,16 +138,22 @@ module ara_fpga_wrap
   logic [63:0] hw_cnt_en_o;
 
    // ---------------------------------------------------------------------------
-   // RISC-V Debug Module (dm_top)
+   // RISC-V Debug Transport (JTAG DMI) + Debug Module (upstream riscv-dbg)
    // ---------------------------------------------------------------------------
 
    // Debug signals
    logic          dmactive;
    logic          debug_req;
-   // We use ndmreset (non-debug-module reset) to reset the SoC
-   // in addition to the board reset/PLL lock (see soc_rst_ni above).
+   // ndmreset (non-debug-module reset) is used to hold the core in reset in
+   // addition to the board reset/PLL lock (see soc_rst_ni above).
 
-   // Debug Module memory window signals (to/from ara_soc)
+   // DMI handshake between dmi_jtag and dm_top
+   dm::dmi_req_t  dmi_req;
+   dm::dmi_resp_t dmi_resp;
+   logic          dmi_req_valid, dmi_req_ready;
+   logic          dmi_resp_valid, dmi_resp_ready;
+
+   // Debug Module memory window signals (to/from ara_soc_fpga)
    logic                      dm_device_req;
    logic                      dm_device_we;
    logic [AxiAddrWidth-1:0]   dm_device_addr;
@@ -148,57 +161,101 @@ module ara_fpga_wrap
    logic [AxiDataWidth-1:0]   dm_device_wdata;
    logic [AxiDataWidth-1:0]   dm_device_rdata;
 
-   // System Bus Access (SBA) host bus signals between dm_top and ara_soc
-   logic                      dm_host_req;
-   logic [AxiAddrWidth-1:0]   dm_host_addr;
-   logic                      dm_host_we;
-   logic [AxiDataWidth-1:0]   dm_host_wdata;
-   logic [AxiDataWidth/8-1:0] dm_host_be;
-   logic                      dm_host_gnt;
-   logic                      dm_host_r_valid;
-   logic [AxiDataWidth-1:0]   dm_host_r_rdata;
+   // System Bus Access (SBA) master bus signals between dm_top and ara_soc_fpga
+   logic                      dm_master_req;
+   logic [AxiAddrWidth-1:0]   dm_master_add;
+   logic                      dm_master_we;
+   logic [AxiDataWidth-1:0]   dm_master_wdata;
+   logic [AxiDataWidth/8-1:0] dm_master_be;
+   logic                      dm_master_gnt;
+   logic                      dm_master_r_valid;
+   logic [AxiDataWidth-1:0]   dm_master_r_rdata;
 
-   // Debug Module:
-   // - Execution-based debug via DEBUG memory window (device_*).
-   // - System Bus Access (SBA) via host_* for full address space access.
-   dm_top #(
-     .NrHarts     (1             ),
-     .IdcodeValue (32'h2495_11C3 ),
-     .BusWidth    (64            )
-   ) i_dm_top (
-     .clk_i          (core_clk        ),
-     .rst_ni         (rst_ni_raw      ),
-     .testmode_i     (1'b0            ),
-     .ndmreset_o     (ndmreset        ),
-     .dmactive_o     (dmactive        ),
-     .debug_req_o    ({debug_req}     ),
-     .unavailable_i  ('0              ),
+   // ---------------------------------------------------------------------------
+   // JTAG DMI transport (upstream dmi_jtag from riscv-dbg)
+   // ---------------------------------------------------------------------------
+   // On AXKU5, jtag_tck comes from an HDIO bank. Vivado was inferring a BUFGCE_DIV
+   // directly from that IO, which violates PLHDIO-3. Insert an explicit BUFGCE
+   // so the HDIO only drives a BUFGCE, and the global clock network is driven
+   // from the BUFGCE output instead of the IO pin itself.
+   logic jtag_tck_buf;
 
-     // Debug memory device bus: connected to ara_soc DEBUG window
-     .device_req_i   (dm_device_req   ),
-     .device_we_i    (dm_device_we    ),
-     .device_addr_i  (dm_device_addr  ),
-     .device_be_i    (dm_device_be    ),
-     .device_wdata_i (dm_device_wdata ),
-     .device_rdata_o (dm_device_rdata ),
-
-     // System Bus Access (SBA) host bus: full address space access
-     .host_req_o     (dm_host_req     ),
-     .host_add_o     (dm_host_addr    ),
-     .host_we_o      (dm_host_we      ),
-     .host_wdata_o   (dm_host_wdata   ),
-     .host_be_o      (dm_host_be      ),
-     .host_gnt_i     (dm_host_gnt     ),
-     .host_r_valid_i (dm_host_r_valid ),
-     .host_r_rdata_i (dm_host_r_rdata ),
-
-     // JTAG pads (not used when BSCANE2-based DTM is present)
-     .tck_i          (1'b0            ),
-     .tms_i          (1'b0            ),
-     .trst_ni        (1'b1            ),
-     .td_i           (1'b0            ),
-     .td_o           (/* unused */    )
+   BUFGCE i_jtag_tck_bufg (
+     .I  (jtag_tck),
+     .CE (1'b1),
+     .O  (jtag_tck_buf)
    );
+
+   dmi_jtag #(
+     .IdcodeValue (32'h2495_11C3)
+   ) i_dmi_jtag (
+     .clk_i            (core_clk        ),
+     .rst_ni           (rst_ni_raw      ),
+     .testmode_i       (1'b0            ),
+
+     .dmi_rst_no       (/* unused */    ),
+     .dmi_req_o        (dmi_req         ),
+     .dmi_req_valid_o  (dmi_req_valid   ),
+     .dmi_req_ready_i  (dmi_req_ready   ),
+     .dmi_resp_i       (dmi_resp        ),
+     .dmi_resp_ready_o (dmi_resp_ready  ),
+     .dmi_resp_valid_i (dmi_resp_valid  ),
+
+     .tck_i            (jtag_tck_buf    ),
+     .tms_i            (jtag_tms        ),
+     .trst_ni          (jtag_trst_n     ),
+     .td_i             (jtag_tdi        ),
+     .td_o             (jtag_tdo        ),
+     .tdo_oe_o         (/* unused */    )
+   );
+
+   // Debug Module core (upstream dm_top from riscv-dbg)
+   logic debug_req_irq;
+
+   dm_top #(
+     .NrHarts         (1                  ),
+     .BusWidth        (AxiDataWidth       ),
+     .SelectableHarts (1'b1               )
+   ) i_dm_top (
+     .clk_i            (core_clk          ),
+     .rst_ni           (rst_ni_raw        ),
+     .testmode_i       (1'b0              ),
+     .ndmreset_o       (ndmreset          ),
+     .dmactive_o       (dmactive          ),
+     .debug_req_o      ({debug_req_irq}   ),
+     .unavailable_i    ('0                ),
+     .hartinfo_i       ({ariane_pkg::DebugHartInfo}),
+
+     // Debug memory device bus: connected to ara_soc_fpga DEBUG window
+     .slave_req_i      (dm_device_req     ),
+     .slave_we_i       (dm_device_we      ),
+     .slave_addr_i     (dm_device_addr    ),
+     .slave_be_i       (dm_device_be      ),
+     .slave_wdata_i    (dm_device_wdata   ),
+     .slave_rdata_o    (dm_device_rdata   ),
+
+     // System Bus Access (SBA) master bus: full address space access
+     .master_req_o     (dm_master_req     ),
+     .master_add_o     (dm_master_add     ),
+     .master_we_o      (dm_master_we      ),
+     .master_wdata_o   (dm_master_wdata   ),
+     .master_be_o      (dm_master_be      ),
+     .master_gnt_i     (dm_master_gnt     ),
+     .master_r_valid_i (dm_master_r_valid ),
+     .master_r_rdata_i (dm_master_r_rdata ),
+
+     // DMI from JTAG
+     .dmi_rst_ni       (rst_ni_raw        ),
+     .dmi_req_valid_i  (dmi_req_valid     ),
+     .dmi_req_ready_o  (dmi_req_ready     ),
+     .dmi_req_i        (dmi_req           ),
+     .dmi_resp_valid_o (dmi_resp_valid    ),
+     .dmi_resp_ready_i (dmi_resp_ready    ),
+     .dmi_resp_o       (dmi_resp          )
+   );
+
+   // Map IRQ-style debug request to the SoC-level debug_req signal
+   assign debug_req = debug_req_irq;
 
   // ---------------------------------------------------------------------------
   // UART APB signals between ara_soc and UART IP

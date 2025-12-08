@@ -1,0 +1,7 @@
+From the root of the repo:
+
+Create filelist for chosen config:
+make -C hardware synth_flist_fpga_wrap config=2_lanes_256
+
+Run Vivado built:
+vivado -mode batch -source hardware/fpga/boards/axku5/build_axku5.tcl -tclargs 2_lanes_256

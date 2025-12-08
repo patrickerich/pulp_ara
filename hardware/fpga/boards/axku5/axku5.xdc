@@ -101,3 +101,53 @@ set_property PULLTYPE PULLUP [get_ports sys_rst_n]
 # - Make sure the selected pins belong to a bank powered for 3.3 V (LVCMOS33),
 #   or adjust the IOSTANDARD accordingly.
 
+
+# ==============================================================================
+# JTAG (RISC-V Debug Module via dmi_jtag) – Olimex ARM-USB-TINY on J8
+# ==============================================================================
+# The FPGA top-level [`ara_fpga_wrap()`](hardware/fpga/src/ara_fpga_wrap.sv:6) exposes:
+#   - jtag_tck
+#   - jtag_tms
+#   - jtag_trst_n
+#   - jtag_tdi
+#   - jtag_tdo
+#
+# The reference design (`hardware/fpga/reference/axku5_olimex.xdc`) uses the
+# following J8 mapping (high end of the AXKU5 J8 header):
+#   J8-28 (IO1_13P, C12) -> TRST_N
+#   J8-30 (IO1_14P, E13) -> TDI
+#   J8-32 (IO1_15P, G12) -> TMS
+#   J8-34 (IO1_16P, A13) -> TCK
+#   J8-36 (IO1_17P, D14) -> TDO
+#
+# We reuse exactly those package pins, but bind them to our ara_fpga_wrap ports:
+#   jtag_tck, jtag_tms, jtag_trst_n, jtag_tdi, jtag_tdo
+
+# Pin assignments (adapted from axku5_olimex.xdc)
+set_property PACKAGE_PIN A13 [get_ports jtag_tck]
+set_property PACKAGE_PIN G12 [get_ports jtag_tms]
+set_property PACKAGE_PIN E13 [get_ports jtag_tdi]
+set_property PACKAGE_PIN D14 [get_ports jtag_tdo]
+set_property PACKAGE_PIN C12 [get_ports jtag_trst_n]
+
+# JTAG is 3.3V single-ended on these IO pins
+set_property IOSTANDARD LVCMOS33 [get_ports {jtag_tck jtag_tms jtag_trst_n jtag_tdi jtag_tdo}]
+
+# Recommended pulls so TAP stays in reset/idle when no probe is attached
+set_property PULLTYPE PULLUP [get_ports {jtag_tms jtag_trst_n}]
+
+# Basic timing guidance for the external JTAG signals
+set_max_delay -to   [get_ports { jtag_tdo } ] 20
+set_max_delay -from [get_ports { jtag_tms } ] 20
+set_max_delay -from [get_ports { jtag_tdi } ] 20
+set_max_delay -from [get_ports { jtag_trst_n } ] 20
+set_false_path -from [get_ports { jtag_trst_n }]
+
+
+# ------------------------------------------------------------------------------
+# JTAG TCK routing: prevent promotion to global clock (fix PLHDIO-3)
+# ------------------------------------------------------------------------------
+# Vivado was inferring a BUFG/BUFGCE_DIV on jtag_tck, which is illegal for
+# this HDIO bank and triggers DRC PLHDIO-3. We do not need jtag_tck on the
+# global clock network, so disable automatic clock buffering here.
+set_property CLOCK_BUFFER_TYPE NONE [get_ports jtag_tck]

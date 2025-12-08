@@ -264,8 +264,8 @@ $(buildpath)/synth_fpga_wrap_$(config).f: $(config_file) Makefile ../Bender.yml 
 	  | grep -v 'ara_tb.sv' \
 	  | grep -v 'tech_cells_generic/src/rtl/tc_sram.sv' \
 	  | grep -v 'tech_cells_generic/src/rtl/tc_clk.sv' \
-	  | grep -v 'corev_apu/riscv-dbg/src/dmi_jtag.sv' \
-	  | grep -v 'corev_apu/riscv-dbg/src/dmi_jtag_tap.sv' \
+	  | grep -v 'src/ara_soc.sv' \
+	  | grep -v 'src/ara_system.sv' \
 	  > $(buildpath)/synth_fpga_wrap_$(config).tmp
 	# Start the final flist with all package files so packages are seen first by the synthesizer
 	grep '_pkg\.sv$$' $(buildpath)/synth_fpga_wrap_$(config).tmp > $(buildpath)/synth_fpga_wrap_$(config).f || true
@@ -273,6 +273,11 @@ $(buildpath)/synth_fpga_wrap_$(config).f: $(config_file) Makefile ../Bender.yml 
 	echo "$(ROOT_DIR)/deps/cva6/corev_apu/riscv-dbg/src/dm_pkg.sv"        >> $(buildpath)/synth_fpga_wrap_$(config).f
 	echo "$(ROOT_DIR)/deps/cva6/corev_apu/riscv-dbg/src/dm_csrs.sv"       >> $(buildpath)/synth_fpga_wrap_$(config).f
 	echo "$(ROOT_DIR)/deps/cva6/corev_apu/riscv-dbg/src/dm_mem.sv"        >> $(buildpath)/synth_fpga_wrap_$(config).f
+	echo "$(ROOT_DIR)/deps/cva6/corev_apu/riscv-dbg/src/dm_sba.sv"        >> $(buildpath)/synth_fpga_wrap_$(config).f
+	echo "$(ROOT_DIR)/deps/cva6/corev_apu/riscv-dbg/src/dm_top.sv"        >> $(buildpath)/synth_fpga_wrap_$(config).f
+	echo "$(ROOT_DIR)/deps/cva6/corev_apu/riscv-dbg/src/dmi_jtag_tap.sv"  >> $(buildpath)/synth_fpga_wrap_$(config).f
+	echo "$(ROOT_DIR)/deps/cva6/corev_apu/riscv-dbg/src/dmi_jtag.sv"      >> $(buildpath)/synth_fpga_wrap_$(config).f
+	echo "$(ROOT_DIR)/deps/cva6/corev_apu/riscv-dbg/src/dmi_cdc.sv"       >> $(buildpath)/synth_fpga_wrap_$(config).f
 	# CVA6 debug ROMs used by dm_mem
 	echo "$(ROOT_DIR)/deps/cva6/corev_apu/riscv-dbg/debug_rom/debug_rom.sv"             >> $(buildpath)/synth_fpga_wrap_$(config).f
 	echo "$(ROOT_DIR)/deps/cva6/corev_apu/riscv-dbg/debug_rom/debug_rom_one_scratch.sv" >> $(buildpath)/synth_fpga_wrap_$(config).f
@@ -280,35 +285,21 @@ $(buildpath)/synth_fpga_wrap_$(config).f: $(config_file) Makefile ../Bender.yml 
 	grep -v '_pkg\.sv$$' $(buildpath)/synth_fpga_wrap_$(config).tmp >> $(buildpath)/synth_fpga_wrap_$(config).f || true
 	# Cleanup temporary file
 	rm $(buildpath)/synth_fpga_wrap_$(config).tmp
+	# Append the FPGA-specific Ara system/SoC variants for debug-enabled FPGA builds
+	echo "$(ROOT_DIR)/fpga/src/ara_system_fpga.sv" >> $(buildpath)/synth_fpga_wrap_$(config).f
+	echo "$(ROOT_DIR)/fpga/src/ara_soc_fpga.sv"    >> $(buildpath)/synth_fpga_wrap_$(config).f
 	# Append the FPGA wrapper explicitly so synthesis can use ara_fpga_wrap as top
-	echo "$(ROOT_DIR)/fpga/src/ara_fpga_wrap.sv" >> $(buildpath)/synth_fpga_wrap_$(config).f
+	echo "$(ROOT_DIR)/fpga/src/ara_fpga_wrap.sv"   >> $(buildpath)/synth_fpga_wrap_$(config).f
 	# Append Xilinx-specific tech-cell implementations for SRAM and clock
 	echo "$(ROOT_DIR)/deps/tech_cells_generic/src/fpga/tc_sram_xilinx.sv" >> $(buildpath)/synth_fpga_wrap_$(config).f
-	echo "$(ROOT_DIR)/deps/tech_cells_generic/src/fpga/tc_clk_xilinx.sv" >> $(buildpath)/synth_fpga_wrap_$(config).f
+	echo "$(ROOT_DIR)/deps/tech_cells_generic/src/fpga/tc_clk_xilinx.sv"  >> $(buildpath)/synth_fpga_wrap_$(config).f
 	# Append UART IP and common_cells FIFO explicitly
-	echo "$(ROOT_DIR)/fpga/src/uart.sv" >> $(buildpath)/synth_fpga_wrap_$(config).f
+	echo "$(ROOT_DIR)/fpga/src/uart.sv"           >> $(buildpath)/synth_fpga_wrap_$(config).f
 	echo "$(ROOT_DIR)/deps/common_cells/src/fifo_v3.sv" >> $(buildpath)/synth_fpga_wrap_$(config).f
-	# Append FPGA debug wrapper (dm_top) that ties CVA6 DM core to the PULP BSCANE2 DTM
-	echo "$(ROOT_DIR)/fpga/src/dm_top.sv" >> $(buildpath)/synth_fpga_wrap_$(config).f
-	# Append BSCANE2-based DTM (PULP DMI JTAG + CDC) and minimal lowRISC prims
-	echo "$(ROOT_DIR)/fpga/pulp_riscv_dbg/src/dmi_bscane_tap.sv"      >> $(buildpath)/synth_fpga_wrap_$(config).f
-	echo "$(ROOT_DIR)/fpga/pulp_riscv_dbg/src/dmi_cdc.sv"             >> $(buildpath)/synth_fpga_wrap_$(config).f
-	echo "$(ROOT_DIR)/fpga/pulp_riscv_dbg/src/dmi_jtag.sv"            >> $(buildpath)/synth_fpga_wrap_$(config).f
-	# Use PULP dm_sba implementation that matches the fpga dm_top.sv port list
-	echo "$(ROOT_DIR)/fpga/pulp_riscv_dbg/src/dm_sba.sv"              >> $(buildpath)/synth_fpga_wrap_$(config).f
-	echo "$(ROOT_DIR)/fpga/lowrisc_ip/ip/prim/rtl/prim_util_pkg.sv"   >> $(buildpath)/synth_fpga_wrap_$(config).f
-	echo "$(ROOT_DIR)/fpga/lowrisc_ip/ip/prim/rtl/prim_assert.sv"     >> $(buildpath)/synth_fpga_wrap_$(config).f
-	echo "$(ROOT_DIR)/fpga/lowrisc_ip/ip/prim/rtl/prim_flop.sv"       >> $(buildpath)/synth_fpga_wrap_$(config).f
-	echo "$(ROOT_DIR)/fpga/lowrisc_ip/ip/prim/rtl/prim_flop_2sync.sv" >> $(buildpath)/synth_fpga_wrap_$(config).f
-	echo "$(ROOT_DIR)/fpga/lowrisc_ip/ip/prim/rtl/prim_clock_mux2.sv" >> $(buildpath)/synth_fpga_wrap_$(config).f
-	echo "$(ROOT_DIR)/fpga/lowrisc_ip/ip/prim/rtl/prim_fifo_async_simple.sv" >> $(buildpath)/synth_fpga_wrap_$(config).f
-	# prim_fifo_async_simple depends on prim_sync_reqack (request/ack handshake)
-	echo "$(ROOT_DIR)/fpga/lowrisc_ip/ip/prim/rtl/prim_sync_reqack.sv" >> $(buildpath)/synth_fpga_wrap_$(config).f
 
 $(buildpath)/synth_fpga_wrap_incdirs_$(config).txt: $(config_file) Makefile ../Bender.yml
 	$(BENDER) script vsim $(bender_targs_simc) $(bender_defs) | grep '+incdir+' | \
 		sed 's|.*"+incdir+\$$ROOT/hardware/\(.*\)".*|-incdir ../\1|' | tr '\n' ' ' > $(buildpath)/synth_fpga_wrap_incdirs_$(config).txt
-	echo " -incdir ../fpga/lowrisc_ip/ip/prim/rtl" >> $(buildpath)/synth_fpga_wrap_incdirs_$(config).txt
 # Xcelium simulation (interactive with GUI)
 .PHONY: simx
 simx: compile_xcelium
