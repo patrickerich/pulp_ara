@@ -151,3 +151,8 @@ set_false_path -from [get_ports { jtag_trst_n }]
 # this HDIO bank and triggers DRC PLHDIO-3. We do not need jtag_tck on the
 # global clock network, so disable automatic clock buffering here.
 set_property CLOCK_BUFFER_TYPE NONE [get_ports jtag_tck]
+
+
+# Allow non-dedicated routing between jtag_tck HDIO and BUFGCE (fix rule_gclkio_bufg).
+# This is acceptable for low-frequency JTAG TCK.
+set_property CLOCK_DEDICATED_ROUTE FALSE [get_nets jtag_tck_IBUF_inst/O]

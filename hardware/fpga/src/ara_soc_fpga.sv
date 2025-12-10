@@ -116,8 +116,8 @@ module ara_soc import axi_pkg::*; import ara_pkg::*; #(
     DRAMBase  = 64'h8000_0000,
     UARTBase  = 64'hC000_0000,
     CTRLBase  = 64'hD000_0000,
-    // Place Debug window at same base as Ibex demo system
-    DebugBase = 64'h1A11_0000
+    // Place Debug window at 0x0000_0000 to match upstream ariane_soc/ariane_xilinx
+    DebugBase = 64'h0000_0000
   } soc_bus_start_e;
 
   ///////////
@@ -712,9 +712,9 @@ module ara_soc import axi_pkg::*; import ara_pkg::*; #(
     cfg.CachedRegionAddrBase  = {DRAMBase};
     cfg.CachedRegionLength    = {DRAMLength};
 
-    // Debug module location (must match Ara SoC DEBUG window and PULP dm_mem)
+    // Debug module location (must match Ara SoC DEBUG window and upstream riscv-dbg)
     // - Debug window is mapped at DebugBase .. DebugBase + DebugLength.
-    //   Here DebugBase = 0x1A11_0000, matching the Ibex demo system.
+    //   Here DebugBase = 0x0000_0000, matching ariane_soc::DebugBase in ariane_xilinx.
     // - CVA6 expects HaltAddress/ExceptionAddress as OFFSETS from DmBaseAddress.
     //   Use the standard offsets (0x800 / 0x808) and let DebugBase provide the absolute base.
     cfg.DebugEn               = 1'b1;
