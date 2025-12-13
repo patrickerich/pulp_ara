@@ -293,8 +293,24 @@ $(buildpath)/synth_fpga_wrap_$(config).f: $(config_file) Makefile ../Bender.yml 
 	# Append Xilinx-specific tech-cell implementations for SRAM and clock
 	echo "$(ROOT_DIR)/deps/tech_cells_generic/src/fpga/tc_sram_xilinx.sv" >> $(buildpath)/synth_fpga_wrap_$(config).f
 	echo "$(ROOT_DIR)/deps/tech_cells_generic/src/fpga/tc_clk_xilinx.sv"  >> $(buildpath)/synth_fpga_wrap_$(config).f
-	# Append UART IP and common_cells FIFO explicitly
-	echo "$(ROOT_DIR)/fpga/src/uart.sv"           >> $(buildpath)/synth_fpga_wrap_$(config).f
+	# Append OpenHW APB UART IP and its local support modules explicitly from the
+	# bundled CVA6 dependency. apb_uart.sv depends on several slib_* and uart_*
+	# helpers in the same directory, which are not otherwise pulled in by Bender
+	# for this FPGA-only top.
+	echo "$(ROOT_DIR)/deps/cva6/corev_apu/fpga/src/apb_uart/src/apb_uart.sv"         >> $(buildpath)/synth_fpga_wrap_$(config).f
+	echo "$(ROOT_DIR)/deps/cva6/corev_apu/fpga/src/apb_uart/src/reg_uart_wrap.sv"    >> $(buildpath)/synth_fpga_wrap_$(config).f
+	echo "$(ROOT_DIR)/deps/cva6/corev_apu/fpga/src/apb_uart/src/slib_clock_div.sv"   >> $(buildpath)/synth_fpga_wrap_$(config).f
+	echo "$(ROOT_DIR)/deps/cva6/corev_apu/fpga/src/apb_uart/src/slib_counter.sv"     >> $(buildpath)/synth_fpga_wrap_$(config).f
+	echo "$(ROOT_DIR)/deps/cva6/corev_apu/fpga/src/apb_uart/src/slib_edge_detect.sv" >> $(buildpath)/synth_fpga_wrap_$(config).f
+	echo "$(ROOT_DIR)/deps/cva6/corev_apu/fpga/src/apb_uart/src/slib_fifo.sv"        >> $(buildpath)/synth_fpga_wrap_$(config).f
+	echo "$(ROOT_DIR)/deps/cva6/corev_apu/fpga/src/apb_uart/src/slib_input_filter.sv">> $(buildpath)/synth_fpga_wrap_$(config).f
+	echo "$(ROOT_DIR)/deps/cva6/corev_apu/fpga/src/apb_uart/src/slib_input_sync.sv"  >> $(buildpath)/synth_fpga_wrap_$(config).f
+	echo "$(ROOT_DIR)/deps/cva6/corev_apu/fpga/src/apb_uart/src/slib_mv_filter.sv"   >> $(buildpath)/synth_fpga_wrap_$(config).f
+	echo "$(ROOT_DIR)/deps/cva6/corev_apu/fpga/src/apb_uart/src/uart_baudgen.sv"     >> $(buildpath)/synth_fpga_wrap_$(config).f
+	echo "$(ROOT_DIR)/deps/cva6/corev_apu/fpga/src/apb_uart/src/uart_interrupt.sv"   >> $(buildpath)/synth_fpga_wrap_$(config).f
+	echo "$(ROOT_DIR)/deps/cva6/corev_apu/fpga/src/apb_uart/src/uart_receiver.sv"    >> $(buildpath)/synth_fpga_wrap_$(config).f
+	echo "$(ROOT_DIR)/deps/cva6/corev_apu/fpga/src/apb_uart/src/uart_transmitter.sv" >> $(buildpath)/synth_fpga_wrap_$(config).f
+	# Append common_cells FIFO explicitly (used in many blocks; redundant but harmless)
 	echo "$(ROOT_DIR)/deps/common_cells/src/fifo_v3.sv" >> $(buildpath)/synth_fpga_wrap_$(config).f
 
 $(buildpath)/synth_fpga_wrap_incdirs_$(config).txt: $(config_file) Makefile ../Bender.yml

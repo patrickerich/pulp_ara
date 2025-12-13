@@ -296,26 +296,52 @@ module ara_soc import axi_pkg::*; import ara_pkg::*; #(
   );
 
 `ifndef SPYGLASS
-  tc_sram #(
-    .NumWords (L2NumWords  ),
-    .NumPorts (1           ),
-    .DataWidth(AxiDataWidth),
-    .SimInit("random")
-  ) i_dram (
-    .clk_i  (clk_i                                                                      ),
-    .rst_ni (rst_ni                                                                     ),
-    .req_i  (l2_req                                                                     ),
-    .we_i   (l2_we                                                                      ),
-    .addr_i (l2_addr[$clog2(L2NumWords)-1+$clog2(AxiDataWidth/8):$clog2(AxiDataWidth/8)]),
-    .wdata_i(l2_wdata                                                                   ),
-    .be_i   (l2_be                                                                      ),
-    .rdata_o(l2_rdata                                                                   )
-  );
+  // -----------------------------------------------------------------------------
+  // FPGA BRAM-backed "DRAM" (AXKU5-style), similar in spirit to CVA6 ariane_xilinx:
+  // - Backed by a reg-array to encourage BRAM inference
+  // - No explicit reset on the array (avoid breaking BRAM inference)
+  // - Byte-enable writes, synchronous read into a register
+  //
+  // Notes:
+  // - The SoC address map still exposes DRAM at DRAMBase (0x8000_0000) with a large
+  //   decode range. Only the lower address bits are used to index the BRAM, so
+  //   addresses beyond the physical depth alias/wrap.
+  // -----------------------------------------------------------------------------
+  localparam int unsigned L2AddrIdxWidth = $clog2(L2NumWords);
+  localparam int unsigned L2BytesPerWord = AxiDataWidth / 8;
+
+  logic [AxiDataWidth-1:0] l2_mem [0:L2NumWords-1];
+  logic [L2AddrIdxWidth-1:0] l2_mem_idx;
+
+  // Word-aligned indexing: drop byte offset bits.
+  assign l2_mem_idx = l2_addr[L2AddrIdxWidth-1+$clog2(L2BytesPerWord):$clog2(L2BytesPerWord)];
+
+  always_ff @(posedge clk_i) begin
+    // Do not reset l2_mem; doing so can prevent BRAM inference.
+    // Only reset the read-data register.
+    if (!rst_ni) begin
+      l2_rdata <= '0;
+    end else begin
+      if (l2_req) begin
+        if (l2_we) begin
+          // Write with byte enables
+          for (int i = 0; i < L2BytesPerWord; i++) begin
+            if (l2_be[i]) begin
+              l2_mem[l2_mem_idx][8*i +: 8] <= l2_wdata[8*i +: 8];
+            end
+          end
+        end else begin
+          // Read
+          l2_rdata <= l2_mem[l2_mem_idx];
+        end
+      end
+    end
+  end
 `else
   assign l2_rdata = '0;
 `endif
 
-  // One-cycle latency for L2
+  // One-cycle latency for L2 (matches the existing axi_to_mem hookup)
   `FF(l2_rvalid, l2_req, 1'b0);
 
   //////////////////////////////
@@ -471,7 +497,22 @@ module ara_soc import axi_pkg::*; import ara_pkg::*; #(
   // Map the Debug Module's memory window into the SoC AXI address space at
   // DebugBase .. DebugBase + DebugLength, and expose a simple request/response
   // interface to the external debug module (dm_top).
-  logic dm_device_rvalid;
+  //
+  // Important timing note:
+  // - riscv-dbg's dm_mem produces read data with a registered (1-cycle) latency
+  //   (via rdata_q). So dm_device_rdata_i is stable during the cycle *after* req_i.
+  // - axi_to_mem typically captures mem_rdata_i on the same clock edge where it
+  //   sees mem_rvalid_i asserted.
+  //
+  // Therefore: delay mem_rvalid_i by 1 cycle, but keep mem_rdata_i COMBINATIONAL.
+  // If we register mem_rdata_i on the same edge as mem_rvalid_i, axi_to_mem may
+  // sample the previous data word and corrupt debug ROM fetches (leading to
+  // abstractcs.busy hangs).
+  logic                    dm_device_rvalid;
+  logic [AxiDataWidth-1:0] dm_device_rdata_q;
+
+  // Combinational: dm_mem already registers the read data internally.
+  assign dm_device_rdata_q = dm_device_rdata_i;
 
   axi_to_mem #(
     .AddrWidth (AxiAddrWidth      ),
@@ -491,13 +532,13 @@ module ara_soc import axi_pkg::*; import ara_pkg::*; #(
     .mem_addr_o  (dm_device_addr_o           ),
     .mem_strb_o  (dm_device_be_o             ),
     .mem_wdata_o (dm_device_wdata_o          ),
-    .mem_rdata_i (dm_device_rdata_i          ),
+    .mem_rdata_i (dm_device_rdata_q          ),
     .mem_rvalid_i(dm_device_rvalid           ),
     .mem_atop_o  (/* Unused */               ),
     .busy_o      (/* Unused */               )
   );
 
-  // Generate a one-cycle read latency for the debug memory window.
+  // Generate a one-cycle read latency for the debug memory window (and rdata_q).
   `FF(dm_device_rvalid, dm_device_req_o & ~dm_device_we_o, 1'b0);
 
   ////////////

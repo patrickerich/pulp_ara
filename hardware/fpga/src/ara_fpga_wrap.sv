@@ -32,8 +32,9 @@ module ara_fpga_wrap
   // AXI Resp Delay [ps] for gate-level simulation
   parameter int unsigned AxiRespDelay = 200,
 
-  // Main memory (smaller L2 for FPGA: 2^14 bytes per full AxiDataWidth)
-  localparam int unsigned L2NumWords   = (2**14) / NrLanes
+  // Main memory (smaller L2 for FPGA: 2^17 bytes per full AxiDataWidth)
+  // keep the same size as cva6 reference project: 512 kiB
+  localparam int unsigned L2NumWords   = (2**17) / NrLanes
 ) (
   // Board-level clock and reset (match axku5.xdc)
   input  logic        sys_clk_p,
@@ -126,10 +127,24 @@ module ara_fpga_wrap
     end
   end
 
-  // soc_rst_ni is deasserted only when the board/PLL reset is released
+  // soc_rst_ni (core reset) is deasserted only when the board/PLL reset is released
   // and the debug module does not hold ndmreset high.
+  //
+  // Use the same reset-generation style as the CVA6 FPGA reference (ariane_xilinx):
+  // generate a clean, synchronized core reset (ndmreset_n) from rst_ni_raw and ndmreset.
   logic ndmreset;
-  assign soc_rst_ni = rst_ni_raw & ~ndmreset;
+  logic ndmreset_n;
+
+  rstgen i_rstgen_core (
+    .clk_i       ( core_clk              ),
+    .rst_ni      ( rst_ni_raw & ~ndmreset ),
+    .test_mode_i ( 1'b0                  ),
+    .rst_no      ( ndmreset_n             ),
+    .init_no     (                        ) // keep open
+  );
+
+  // Keep the existing naming: soc_rst_ni is the core-reset net used throughout this wrapper.
+  assign soc_rst_ni = ndmreset_n;
 
   // ---------------------------------------------------------------------------
   // SoC control/status
@@ -162,6 +177,8 @@ module ara_fpga_wrap
    logic [AxiDataWidth-1:0]   dm_device_rdata;
 
    // System Bus Access (SBA) master bus signals between dm_top and ara_soc_fpga
+   // dm_master_* are the SBA ports of dm_top (riscv-dbg).
+   // dm_host_* are the Ara SoC's SBA host ports (ara_soc_fpga.sv).
    logic                      dm_master_req;
    logic [AxiAddrWidth-1:0]   dm_master_add;
    logic                      dm_master_we;
@@ -170,6 +187,16 @@ module ara_fpga_wrap
    logic                      dm_master_gnt;
    logic                      dm_master_r_valid;
    logic [AxiDataWidth-1:0]   dm_master_r_rdata;
+
+   // Ara SoC SBA host interface (simple request/grant + data-valid handshake).
+   logic                      dm_host_req;
+   logic                      dm_host_we;
+   logic [AxiAddrWidth-1:0]   dm_host_addr;
+   logic [AxiDataWidth/8-1:0] dm_host_be;
+   logic [AxiDataWidth-1:0]   dm_host_wdata;
+   logic                      dm_host_gnt;
+   logic                      dm_host_r_valid;
+   logic [AxiDataWidth-1:0]   dm_host_r_rdata;
 
    // ---------------------------------------------------------------------------
    // JTAG DMI transport (upstream dmi_jtag from riscv-dbg)
@@ -187,7 +214,10 @@ module ara_fpga_wrap
    );
 
    dmi_jtag #(
-     .IdcodeValue (32'h2495_11C3)
+     // Match the OpenHW CVA6 reference design default IDCODE so that
+     // the same OpenOCD configuration (fpga/scripts/openocd.cfg) can
+     // be reused without changes.
+     .IdcodeValue (32'h0000_0001)
    ) i_dmi_jtag (
      .clk_i            (core_clk        ),
      .rst_ni           (rst_ni_raw      ),
@@ -215,6 +245,7 @@ module ara_fpga_wrap
    dm_top #(
      .NrHarts         (1                  ),
      .BusWidth        (AxiDataWidth       ),
+     .DmBaseAddress   ('h0                ),
      .SelectableHarts (1'b1               )
    ) i_dm_top (
      .clk_i            (core_clk          ),
@@ -256,6 +287,36 @@ module ara_fpga_wrap
 
    // Map IRQ-style debug request to the SoC-level debug_req signal
    assign debug_req = debug_req_irq;
+
+   // -----------------------------------------------------------------------
+   // Connect dm_top SBA master interface to Ara SoC SBA host interface
+   // -----------------------------------------------------------------------
+   // dm_top exposes a simple SBA handshake:
+   //   - master_req_o / master_gnt_i
+   //   - master_we_o
+   //   - master_add_o
+   //   - master_be_o
+   //   - master_wdata_o
+   //   - master_r_valid_i / master_r_rdata_i
+   //
+   // ara_soc_fpga.sv implements a matching simple SBA master which
+   // drives the SoC AXI crossbar port 1 from:
+   //   - sba_req_i / sba_gnt_o
+   //   - sba_we_i
+   //   - sba_addr_i
+   //   - sba_be_i
+   //   - sba_wdata_i
+   //   - sba_r_valid_o / sba_r_rdata_o
+   //
+   // We can therefore connect them 1:1 without any additional FSM.
+   assign dm_host_req        = dm_master_req;
+   assign dm_host_we         = dm_master_we;
+   assign dm_host_addr       = dm_master_add;
+   assign dm_host_be         = dm_master_be;
+   assign dm_host_wdata      = dm_master_wdata;
+   assign dm_master_gnt      = dm_host_gnt;
+   assign dm_master_r_valid  = dm_host_r_valid;
+   assign dm_master_r_rdata  = dm_host_r_rdata;
 
   // ---------------------------------------------------------------------------
   // UART APB signals between ara_soc and UART IP
@@ -329,30 +390,40 @@ module ara_fpga_wrap
   );
 
   // ---------------------------------------------------------------------------
-  // UART IP (APB slave + FIFOs) connected to board pins
-  // Core clock for UART is also 50 MHz
+  // UART: reuse upstream OpenHW APB UART IP (as in ariane_peripherals)
   // ---------------------------------------------------------------------------
-  uart #(
-    .ClockFrequency (50_000_000),
-    .BaudRate       (115200),
-    .RxFifoDepth    (128),
-    .TxFifoDepth    (128),
-    .AddrWidth      (32),
-    .DataWidth      (32)
-  ) i_uart (
-    .clk_i      (core_clk),
-    .rst_ni     (soc_rst_ni),
-    .psel_i     (uart_psel),
-    .penable_i  (uart_penable),
-    .pwrite_i   (uart_pwrite),
-    .paddr_i    (uart_paddr),
-    .pwdata_i   (uart_pwdata),
-    .prdata_o   (uart_prdata),
-    .pready_o   (uart_pready),
-    .pslverr_o  (uart_pslverr),
-    .uart_rx_i  (uart_rx),
-    .uart_tx_o  (uart_tx),
-    .uart_irq_o (/* unused for now */)
+  // ara_soc_fpga exposes an APB slave port for the UART:
+  //   uart_p* signals (32-bit addr/data).
+  // The OpenHW APB UART expects:
+  //   - CLK / RSTN
+  //   - PSEL / PENABLE / PWRITE / PADDR[4:2] / PWDATA / PRDATA / PREADY / PSLVERR
+  //   - INT (interrupt) and modem control pins (unused here)
+  //   - SIN / SOUT pins to the board UART.
+  //
+  // We instantiate apb_uart directly here, wired exactly like in
+  // reference_proj/cva6/corev_apu/fpga/src/ariane_peripherals_xilinx.sv.
+  apb_uart i_apb_uart (
+    .CLK     ( core_clk        ),
+    .RSTN    ( soc_rst_ni      ),
+    .PSEL    ( uart_psel       ),
+    .PENABLE ( uart_penable    ),
+    .PWRITE  ( uart_pwrite     ),
+    .PADDR   ( uart_paddr[4:2] ),
+    .PWDATA  ( uart_pwdata     ),
+    .PRDATA  ( uart_prdata     ),
+    .PREADY  ( uart_pready     ),
+    .PSLVERR ( uart_pslverr    ),
+    .INT     ( /* unused IRQ */),
+    .OUT1N   (                 ), // unused
+    .OUT2N   (                 ), // unused
+    .RTSN    (                 ), // no HW flow control
+    .DTRN    (                 ), // no HW flow control
+    .CTSN    ( 1'b0            ),
+    .DSRN    ( 1'b0            ),
+    .DCDN    ( 1'b0            ),
+    .RIN     ( 1'b0            ),
+    .SIN     ( uart_rx         ),
+    .SOUT    ( uart_tx         )
   );
 
   // ---------------------------------------------------------------------------
@@ -368,9 +439,14 @@ module ara_fpga_wrap
   // assign led[3] = 1'b0;
 
   // Simple LED status - DEBUG VERSION
-  assign led[0] = pll_locked;      // Should be ON when PLL locks
-  assign led[1] = rst_ni_raw;      // Should be ON when out of reset
-  assign led[2] = dmactive;        // Should go ON when debug connected
-  assign led[3] = debug_req;       // Pulses when debugger halts core
+  // Keep these as "bring-up probes" for debug:
+  //   led[0] : PLL locked
+  //   led[1] : core reset released (soc_rst_ni / ndmreset_n)
+  //   led[2] : dmactive (DMCONTROL.dmactive set by debugger)
+  //   led[3] : debug_req (halt request line driven towards CVA6)
+  assign led[0] = pll_locked;
+  assign led[1] = soc_rst_ni;
+  assign led[2] = dmactive;
+  assign led[3] = debug_req;
 
 endmodule : ara_fpga_wrap
