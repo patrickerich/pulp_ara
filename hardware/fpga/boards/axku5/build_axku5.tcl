@@ -1,33 +1,48 @@
-# Vivado project-mode build script for Ara on AXKU5
+# Vivado project-mode build script for AXKU5
 #
 # Usage (from repo root):
-#   make -C hardware synth_flist_fpga_wrap config=2_lanes_128
-#   vivado -mode batch -source hardware/fpga/boards/axku5/build_axku5.tcl -tclargs 2_lanes_128
+#   # Ara (default top):
+#   make -C hardware synth_flist_fpga_wrap config=2_lanes_256
+#   vivado -mode batch -source hardware/fpga/boards/axku5/build_axku5.tcl -tclargs 2_lanes_256
+#
+#   # CVA6-only baseline:
+#   make -C hardware synth_flist_fpga_wrap FPGA_TOP=cva6_fpga_wrap config=2_lanes_256
+#   vivado -mode batch -source hardware/fpga/boards/axku5/build_axku5.tcl -tclargs 2_lanes_256 cva6_fpga_wrap
 #
 # Or in GUI mode (Tcl console):
-#   set argv {2_lanes_128}
+#   set argv {2_lanes_256}
 #   set argc [llength $argv]
 #   source hardware/fpga/boards/axku5/build_axku5.tcl
 #
 # This script:
-#   - Creates a Vivado project under hardware/build/build_axku5_<config>/
+#   - Creates a Vivado project under hardware/build/build_axku5_<top>_<config>/
 #   - Adds sources from the synthesis filelist (synth_flist_fpga_wrap)
 #   - Applies include directories
 #   - Adds the AXKU5 board constraints
 #   - Runs synthesis and implementation
-#   - Writes a bitstream ara_axku5_<config>.bit in the same project directory
+#   - Writes a bitstream <top>_axku5_<config>.bit in the same project directory
+#
+# Args:
+#   argv0: <config>   (e.g. 2_lanes_256)
+#   argv1: <fpga_top> (optional; default: ara_fpga_wrap; e.g. cva6_fpga_wrap)
 
 # -----------------------
 # Parse command line args
 # -----------------------
 
 if { $argc < 1 } {
-  puts "ERROR: Expected at least 1 argument: <config> (e.g. 2_lanes_128)"
+  puts "ERROR: Expected at least 1 argument: <config> (e.g. 2_lanes_256) [<fpga_top>]"
   return -code error
 }
 
 set config [lindex $argv 0]
-puts "INFO: Using Ara configuration: $config"
+set fpga_top "ara_fpga_wrap"
+if { $argc >= 2 } {
+  set fpga_top [lindex $argv 1]
+}
+
+puts "INFO: Using configuration: $config"
+puts "INFO: Using FPGA top     : $fpga_top"
 
 # -------------------
 # Derive key paths
@@ -48,16 +63,18 @@ set hw_dir    [file normalize [file join $repo_dir hardware]]
 set hw_build_dir [file normalize [file join $hw_dir build]]
 
 # Vivado project directory under hardware/build
-set proj_dir  [file normalize [file join $hw_build_dir build_axku5_${config}]]
-set proj_name "ara_axku5_${config}"
+set proj_dir  [file normalize [file join $hw_build_dir build_axku5_${fpga_top}_${config}]]
+set proj_name "${fpga_top}_axku5_${config}"
 
-# Flist and incdir files produced by 'make -C hardware synth_flist_fpga_wrap'
-set flist_file   [file join $hw_build_dir synth_fpga_wrap_${config}.f]
-set incdirs_file [file join $hw_build_dir synth_fpga_wrap_incdirs_${config}.txt]
+# Flist and incdir files produced by:
+#   make -C hardware synth_flist_fpga_wrap [FPGA_TOP=<fpga_top>] config=<config>
+set flist_file   [file join $hw_build_dir synth_fpga_wrap_${fpga_top}_${config}.f]
+set incdirs_file [file join $hw_build_dir synth_fpga_wrap_${fpga_top}_${config}_incdirs.txt]
 set xdc_file     [file normalize [file join $script_dir axku5.xdc]]
 
 if {![file exists $flist_file]} {
-  puts "ERROR: Filelist $flist_file does not exist. Run 'make -C hardware synth_flist_fpga_wrap config=$config' first."
+  puts "ERROR: Filelist $flist_file does not exist."
+  puts "ERROR: Run: make -C hardware synth_flist_fpga_wrap FPGA_TOP=$fpga_top config=$config"
   return -code error
 }
 
@@ -73,6 +90,7 @@ if {![file exists $xdc_file]} {
 puts "INFO: Project dir : $proj_dir"
 puts "INFO: Project name: $proj_name"
 puts "INFO: Flist       : $flist_file"
+puts "INFO: Incdirs     : $incdirs_file"
 puts "INFO: XDC         : $xdc_file"
 
 # -------------------
@@ -81,7 +99,7 @@ puts "INFO: XDC         : $xdc_file"
 
 # Device part for AXKU5 (adjust if needed)
 set part_name "xcku5p-ffvb676-2-e"
-set top_name  "ara_fpga_wrap"
+set top_name  $fpga_top
 
 # Create / recreate project
 file mkdir $proj_dir
@@ -189,10 +207,10 @@ wait_on_run impl_1
 
 # Open implemented design and write a named bitstream in the project dir
 open_run impl_1
-set bit_file [file normalize [file join $proj_dir "ara_axku5_${config}.bit"]]
-set mmi_file [file normalize [file join $proj_dir "ara_axku5_${config}.mmi"]]
+set bit_file [file normalize [file join $proj_dir "${fpga_top}_axku5_${config}.bit"]]
+set mmi_file [file normalize [file join $proj_dir "${fpga_top}_axku5_${config}.mmi"]]
 write_bitstream -force $bit_file
 puts "INFO: Bitstream written to $bit_file"
-write_mem_info -force ara_axku5_2_lanes_256.mmi
+write_mem_info -force $mmi_file
 puts "INFO: Memory map info written to $mmi_file"
 

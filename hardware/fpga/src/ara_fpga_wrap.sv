@@ -14,8 +14,8 @@ module ara_fpga_wrap
   parameter int unsigned VLEN         = 256,
   parameter int unsigned OSSupport    = 1,
 
-  // Support for floating-point data types (FP16 only by default on FPGA)
-  parameter fpu_support_e   FPUSupport   = FPUSupportHalf,
+  // Support for floating-point data types (FP16+FP32+FP64 for both scalar CVA6 and vector Ara)
+  parameter fpu_support_e   FPUSupport   = FPUSupportHalfSingleDouble,
   // External support for vfrec7, vfrsqrt7
   parameter fpext_support_e FPExtSupport = FPExtSupportEnable,
   // Support for fixed-point data types
@@ -245,7 +245,8 @@ module ara_fpga_wrap
    dm_top #(
      .NrHarts         (1                  ),
      .BusWidth        (AxiDataWidth       ),
-     .DmBaseAddress   ('h0                ),
+     // Match the upstream OpenHW CVA6 FPGA reference integration:
+     // do not override DmBaseAddress here (use dm_top default).
      .SelectableHarts (1'b1               )
    ) i_dm_top (
      .clk_i            (core_clk          ),

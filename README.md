@@ -289,6 +289,101 @@ make -C hardware simv app=rvv
 
 ## FPGA implementation and Linux flow
 
+This repository currently contains **two FPGA-related flows**:
+
+1) **AXKU5 “standalone” bring-up flow (Vivado + OpenOCD)**
+   A minimal FPGA top that targets bring-up and debug of the CVA6/Ara system via external JTAG (OpenOCD/GDB).
+   - Ara top: `ara_fpga_wrap`
+   - CVA6-only baseline top: `cva6_fpga_wrap` (useful to isolate Ara-related issues)
+
+2) **Cheshire FPGA flow (VCU118/VCU128, bare-metal + Linux)**
+   A separate (Cheshire-based) integration that supports VCU128/VCU118 in bare-metal and with Linux.
+
+### AXKU5 standalone FPGA flow (Vivado + OpenOCD)
+
+#### 0) Dependencies / checkout
+Make sure the hardware dependencies are checked out (Bender-managed):
+
+```bash
+make -C hardware checkout
+```
+
+If you have not done so before (or after re-checking out deps), apply patches:
+
+```bash
+make -C hardware apply-patches
+```
+
+#### 1) Select an Ara configuration
+The AXKU5 FPGA flow reuses the existing Ara configuration system. Example:
+
+- `config=2_lanes_256`
+
+You can either pass `config=...` to commands, or export `ARA_CONFIGURATION`.
+
+#### 2) Generate the synthesis filelist (Ara top or CVA6-only top)
+
+**Ara top (CVA6 + Ara, default):**
+```bash
+make -C hardware synth_flist_fpga_wrap FPGA_TOP=ara_fpga_wrap config=2_lanes_256
+```
+
+Notes:
+- `FPGA_TOP=ara_fpga_wrap` is the default; passing it explicitly just makes intent obvious.
+- The current `ara_fpga_wrap`/`ara_soc_fpga` integration uses the same “known-good” debug plumbing as the upstream OpenHW CVA6 FPGA reference:
+  - `dm_top` is instantiated without overriding `DmBaseAddress`
+  - the debug memory window uses `axi2mem`
+  - SBA uses the standard `axi_adapter`
+
+**CVA6-only baseline top (no Ara):**
+```bash
+make -C hardware synth_flist_fpga_wrap FPGA_TOP=cva6_fpga_wrap config=2_lanes_256
+```
+
+This produces:
+- `hardware/build/synth_fpga_wrap_<FPGA_TOP>_<config>.f`
+- `hardware/build/synth_fpga_wrap_<FPGA_TOP>_<config>_incdirs.txt`
+
+And also keeps compatibility copies:
+- `hardware/build/synth_fpga_wrap_<config>.f`
+- `hardware/build/synth_fpga_wrap_incdirs_<config>.txt`
+
+#### 3) Build the AXKU5 bitstream (batch Vivado)
+The AXKU5 Vivado build script supports selecting the top module explicitly.
+
+**Ara top (CVA6 + Ara):**
+```bash
+vivado -mode batch -source hardware/fpga/boards/axku5/build_axku5.tcl -tclargs 2_lanes_256 ara_fpga_wrap
+```
+
+**CVA6-only baseline top (no Ara):**
+```bash
+vivado -mode batch -source hardware/fpga/boards/axku5/build_axku5.tcl -tclargs 2_lanes_256 cva6_fpga_wrap
+```
+
+The build directory is created under:
+- `hardware/build/build_axku5_<top>_<config>/`
+
+And the bitstream is written as:
+- `<top>_axku5_<config>.bit` (plus `.mmi`)
+
+#### 4) OpenOCD bring-up
+After programming the FPGA bitstream, start OpenOCD:
+
+```bash
+openocd -f hardware/fpga/scripts/openocd.cfg
+```
+
+This config is currently set up for an Olimex JTAG adapter and a RISC-V JTAG DTM TAP.
+
+#### 5) Loading software (current state)
+- The repository contains helper scripts under `hardware/fpga/scripts/` and `utils/` (e.g. SBA-based loading experiments).
+- For Ara builds, OpenOCD may print:
+  - `Couldn't read vlenb; vector register access won't work.`
+  This is usually a non-fatal probe warning and does not prevent basic halt/load/run flows; it only affects vector register access via the debugger.
+
+### Cheshire FPGA flow (VCU118/VCU128, bare-metal + Linux)
+
 Ara supports Cheshire's FPGA flow and can be currently implemented on VCU128 and VCU118 in bare-metal and with Linux. The tested configuration is with 2 lanes.
 
 For information about the FPGA bare-metal and Linux flows, please refer to `cheshire/README.md`.

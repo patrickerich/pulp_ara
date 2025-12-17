@@ -251,11 +251,42 @@ $(buildpath)/synth_wrap_incdirs_$(config).txt: $(config_file) Makefile ../Bender
 		sed 's|.*"+incdir+\$$ROOT/hardware/\(.*\)".*|-incdir ../\1|' | tr '\n' ' ' > $(buildpath)/synth_wrap_incdirs_$(config).txt
 
 
-# Synthesis filelist including ara_fpga_wrap.sv (FPGA-oriented top)
-.PHONY: synth_flist_fpga_wrap
-synth_flist_fpga_wrap: $(buildpath) bender $(buildpath)/synth_fpga_wrap_$(config).f $(buildpath)/synth_fpga_wrap_incdirs_$(config).txt
+# Synthesis filelist for FPGA-oriented top (Ara by default; can be switched to CVA6-only)
+#
+# Usage examples:
+#   - Default (Ara):
+#       make -C hardware synth_flist_fpga_wrap config=2_lanes_256
+#   - CVA6-only baseline:
+#       make -C hardware synth_flist_fpga_wrap FPGA_TOP=cva6_fpga_wrap config=2_lanes_256
+#
+# Output files:
+#   build/synth_fpga_wrap_$(FPGA_TOP)_$(config).f
+#   build/synth_fpga_wrap_$(FPGA_TOP)_$(config)_incdirs.txt
+# plus compatibility copies:
+#   build/synth_fpga_wrap_$(config).f
+#   build/synth_fpga_wrap_incdirs_$(config).txt
+FPGA_TOP ?= ara_fpga_wrap
+ifeq ($(FPGA_TOP),cva6_fpga_wrap)
+  FPGA_TOP_SV    := fpga/src/cva6_fpga_wrap.sv
+  FPGA_SOC_SV    := fpga/src/cva6_soc_fpga.sv
+  FPGA_SYSTEM_SV := fpga/src/cva6_system_fpga.sv
+else
+  FPGA_TOP_SV    := fpga/src/ara_fpga_wrap.sv
+  FPGA_SOC_SV    := fpga/src/ara_soc_fpga.sv
+  FPGA_SYSTEM_SV := fpga/src/ara_system_fpga.sv
+endif
 
-$(buildpath)/synth_fpga_wrap_$(config).f: $(config_file) Makefile ../Bender.yml fpga/src/ara_fpga_wrap.sv
+FPGA_FLIST        := synth_fpga_wrap_$(FPGA_TOP)_$(config).f
+FPGA_FINC_TXT     := synth_fpga_wrap_$(FPGA_TOP)_$(config)_incdirs.txt
+FPGA_FLIST_LEGACY := synth_fpga_wrap_$(config).f
+
+.PHONY: synth_flist_fpga_wrap
+synth_flist_fpga_wrap: $(buildpath) bender $(buildpath)/$(FPGA_FLIST) $(buildpath)/$(FPGA_FINC_TXT)
+	@# Compatibility copies for existing scripts/users
+	@cp -f $(buildpath)/$(FPGA_FLIST)    $(buildpath)/$(FPGA_FLIST_LEGACY)
+	@cp -f $(buildpath)/$(FPGA_FINC_TXT) $(buildpath)/synth_fpga_wrap_incdirs_$(config).txt
+
+$(buildpath)/$(FPGA_FLIST): $(config_file) Makefile ../Bender.yml $(FPGA_TOP_SV) $(FPGA_SOC_SV) $(FPGA_SYSTEM_SV)
 	# Generate a temporary raw list (no .svh, skip simulation-only and verification-only modules)
 	$(BENDER) script flist $(bender_targs_simc) $(bender_defs) \
 	  | grep -v '\.svh$$' \
@@ -268,54 +299,60 @@ $(buildpath)/synth_fpga_wrap_$(config).f: $(config_file) Makefile ../Bender.yml 
 	  | grep -v 'src/ara_system.sv' \
 	  > $(buildpath)/synth_fpga_wrap_$(config).tmp
 	# Start the final flist with all package files so packages are seen first by the synthesizer
-	grep '_pkg\.sv$$' $(buildpath)/synth_fpga_wrap_$(config).tmp > $(buildpath)/synth_fpga_wrap_$(config).f || true
+	grep '_pkg\.sv$$' $(buildpath)/synth_fpga_wrap_$(config).tmp > $(buildpath)/$(FPGA_FLIST) || true
 	# Ensure CVA6 debug package and core debug modules are present (define package dm and DM blocks)
-	echo "$(ROOT_DIR)/deps/cva6/corev_apu/riscv-dbg/src/dm_pkg.sv"        >> $(buildpath)/synth_fpga_wrap_$(config).f
-	echo "$(ROOT_DIR)/deps/cva6/corev_apu/riscv-dbg/src/dm_csrs.sv"       >> $(buildpath)/synth_fpga_wrap_$(config).f
-	echo "$(ROOT_DIR)/deps/cva6/corev_apu/riscv-dbg/src/dm_mem.sv"        >> $(buildpath)/synth_fpga_wrap_$(config).f
-	echo "$(ROOT_DIR)/deps/cva6/corev_apu/riscv-dbg/src/dm_sba.sv"        >> $(buildpath)/synth_fpga_wrap_$(config).f
-	echo "$(ROOT_DIR)/deps/cva6/corev_apu/riscv-dbg/src/dm_top.sv"        >> $(buildpath)/synth_fpga_wrap_$(config).f
-	echo "$(ROOT_DIR)/deps/cva6/corev_apu/riscv-dbg/src/dmi_jtag_tap.sv"  >> $(buildpath)/synth_fpga_wrap_$(config).f
-	echo "$(ROOT_DIR)/deps/cva6/corev_apu/riscv-dbg/src/dmi_jtag.sv"      >> $(buildpath)/synth_fpga_wrap_$(config).f
-	echo "$(ROOT_DIR)/deps/cva6/corev_apu/riscv-dbg/src/dmi_cdc.sv"       >> $(buildpath)/synth_fpga_wrap_$(config).f
+	echo "$(ROOT_DIR)/deps/cva6/corev_apu/riscv-dbg/src/dm_pkg.sv"        >> $(buildpath)/$(FPGA_FLIST)
+	echo "$(ROOT_DIR)/deps/cva6/corev_apu/riscv-dbg/src/dm_csrs.sv"       >> $(buildpath)/$(FPGA_FLIST)
+	echo "$(ROOT_DIR)/deps/cva6/corev_apu/riscv-dbg/src/dm_mem.sv"        >> $(buildpath)/$(FPGA_FLIST)
+	echo "$(ROOT_DIR)/deps/cva6/corev_apu/riscv-dbg/src/dm_sba.sv"        >> $(buildpath)/$(FPGA_FLIST)
+	echo "$(ROOT_DIR)/deps/cva6/corev_apu/riscv-dbg/src/dm_top.sv"        >> $(buildpath)/$(FPGA_FLIST)
+	echo "$(ROOT_DIR)/deps/cva6/corev_apu/riscv-dbg/src/dmi_jtag_tap.sv"  >> $(buildpath)/$(FPGA_FLIST)
+	echo "$(ROOT_DIR)/deps/cva6/corev_apu/riscv-dbg/src/dmi_jtag.sv"      >> $(buildpath)/$(FPGA_FLIST)
+	echo "$(ROOT_DIR)/deps/cva6/corev_apu/riscv-dbg/src/dmi_cdc.sv"       >> $(buildpath)/$(FPGA_FLIST)
 	# CVA6 debug ROMs used by dm_mem
-	echo "$(ROOT_DIR)/deps/cva6/corev_apu/riscv-dbg/debug_rom/debug_rom.sv"             >> $(buildpath)/synth_fpga_wrap_$(config).f
-	echo "$(ROOT_DIR)/deps/cva6/corev_apu/riscv-dbg/debug_rom/debug_rom_one_scratch.sv" >> $(buildpath)/synth_fpga_wrap_$(config).f
+	echo "$(ROOT_DIR)/deps/cva6/corev_apu/riscv-dbg/debug_rom/debug_rom.sv"             >> $(buildpath)/$(FPGA_FLIST)
+	echo "$(ROOT_DIR)/deps/cva6/corev_apu/riscv-dbg/debug_rom/debug_rom_one_scratch.sv" >> $(buildpath)/$(FPGA_FLIST)
 	# Append all remaining SystemVerilog sources
-	grep -v '_pkg\.sv$$' $(buildpath)/synth_fpga_wrap_$(config).tmp >> $(buildpath)/synth_fpga_wrap_$(config).f || true
+	grep -v '_pkg\.sv$$' $(buildpath)/synth_fpga_wrap_$(config).tmp >> $(buildpath)/$(FPGA_FLIST) || true
 	# Cleanup temporary file
 	rm $(buildpath)/synth_fpga_wrap_$(config).tmp
-	# Append the FPGA-specific Ara system/SoC variants for debug-enabled FPGA builds
-	echo "$(ROOT_DIR)/fpga/src/ara_system_fpga.sv" >> $(buildpath)/synth_fpga_wrap_$(config).f
-	echo "$(ROOT_DIR)/fpga/src/ara_soc_fpga.sv"    >> $(buildpath)/synth_fpga_wrap_$(config).f
-	# Append the FPGA wrapper explicitly so synthesis can use ara_fpga_wrap as top
-	echo "$(ROOT_DIR)/fpga/src/ara_fpga_wrap.sv"   >> $(buildpath)/synth_fpga_wrap_$(config).f
+	# Append the selected FPGA system/SoC/top sources
+	echo "$(ROOT_DIR)/$(FPGA_SYSTEM_SV)" >> $(buildpath)/$(FPGA_FLIST)
+	# Include the same DM bridges used by the upstream OpenHW CVA6 reference project:
+	# - [axi_adapter.sv](hardware/fpga/src/axi_adapter.sv:1) for DM SBA master
+	# - [axi2mem.sv](hardware/fpga/src/axi2mem.sv:20) for DM debug window slave
+	#
+	# NOTE: Both the CVA6-only and Ara FPGA SoCs use these blocks now.
+	echo "$(ROOT_DIR)/fpga/src/axi_adapter.sv" >> $(buildpath)/$(FPGA_FLIST)
+	echo "$(ROOT_DIR)/fpga/src/axi2mem.sv"     >> $(buildpath)/$(FPGA_FLIST)
+	echo "$(ROOT_DIR)/$(FPGA_SOC_SV)"    >> $(buildpath)/$(FPGA_FLIST)
+	echo "$(ROOT_DIR)/$(FPGA_TOP_SV)"    >> $(buildpath)/$(FPGA_FLIST)
 	# Append Xilinx-specific tech-cell implementations for SRAM and clock
-	echo "$(ROOT_DIR)/deps/tech_cells_generic/src/fpga/tc_sram_xilinx.sv" >> $(buildpath)/synth_fpga_wrap_$(config).f
-	echo "$(ROOT_DIR)/deps/tech_cells_generic/src/fpga/tc_clk_xilinx.sv"  >> $(buildpath)/synth_fpga_wrap_$(config).f
+	echo "$(ROOT_DIR)/deps/tech_cells_generic/src/fpga/tc_sram_xilinx.sv" >> $(buildpath)/$(FPGA_FLIST)
+	echo "$(ROOT_DIR)/deps/tech_cells_generic/src/fpga/tc_clk_xilinx.sv"  >> $(buildpath)/$(FPGA_FLIST)
 	# Append OpenHW APB UART IP and its local support modules explicitly from the
 	# bundled CVA6 dependency. apb_uart.sv depends on several slib_* and uart_*
 	# helpers in the same directory, which are not otherwise pulled in by Bender
 	# for this FPGA-only top.
-	echo "$(ROOT_DIR)/deps/cva6/corev_apu/fpga/src/apb_uart/src/apb_uart.sv"         >> $(buildpath)/synth_fpga_wrap_$(config).f
-	echo "$(ROOT_DIR)/deps/cva6/corev_apu/fpga/src/apb_uart/src/reg_uart_wrap.sv"    >> $(buildpath)/synth_fpga_wrap_$(config).f
-	echo "$(ROOT_DIR)/deps/cva6/corev_apu/fpga/src/apb_uart/src/slib_clock_div.sv"   >> $(buildpath)/synth_fpga_wrap_$(config).f
-	echo "$(ROOT_DIR)/deps/cva6/corev_apu/fpga/src/apb_uart/src/slib_counter.sv"     >> $(buildpath)/synth_fpga_wrap_$(config).f
-	echo "$(ROOT_DIR)/deps/cva6/corev_apu/fpga/src/apb_uart/src/slib_edge_detect.sv" >> $(buildpath)/synth_fpga_wrap_$(config).f
-	echo "$(ROOT_DIR)/deps/cva6/corev_apu/fpga/src/apb_uart/src/slib_fifo.sv"        >> $(buildpath)/synth_fpga_wrap_$(config).f
-	echo "$(ROOT_DIR)/deps/cva6/corev_apu/fpga/src/apb_uart/src/slib_input_filter.sv">> $(buildpath)/synth_fpga_wrap_$(config).f
-	echo "$(ROOT_DIR)/deps/cva6/corev_apu/fpga/src/apb_uart/src/slib_input_sync.sv"  >> $(buildpath)/synth_fpga_wrap_$(config).f
-	echo "$(ROOT_DIR)/deps/cva6/corev_apu/fpga/src/apb_uart/src/slib_mv_filter.sv"   >> $(buildpath)/synth_fpga_wrap_$(config).f
-	echo "$(ROOT_DIR)/deps/cva6/corev_apu/fpga/src/apb_uart/src/uart_baudgen.sv"     >> $(buildpath)/synth_fpga_wrap_$(config).f
-	echo "$(ROOT_DIR)/deps/cva6/corev_apu/fpga/src/apb_uart/src/uart_interrupt.sv"   >> $(buildpath)/synth_fpga_wrap_$(config).f
-	echo "$(ROOT_DIR)/deps/cva6/corev_apu/fpga/src/apb_uart/src/uart_receiver.sv"    >> $(buildpath)/synth_fpga_wrap_$(config).f
-	echo "$(ROOT_DIR)/deps/cva6/corev_apu/fpga/src/apb_uart/src/uart_transmitter.sv" >> $(buildpath)/synth_fpga_wrap_$(config).f
+	echo "$(ROOT_DIR)/deps/cva6/corev_apu/fpga/src/apb_uart/src/apb_uart.sv"         >> $(buildpath)/$(FPGA_FLIST)
+	echo "$(ROOT_DIR)/deps/cva6/corev_apu/fpga/src/apb_uart/src/reg_uart_wrap.sv"    >> $(buildpath)/$(FPGA_FLIST)
+	echo "$(ROOT_DIR)/deps/cva6/corev_apu/fpga/src/apb_uart/src/slib_clock_div.sv"   >> $(buildpath)/$(FPGA_FLIST)
+	echo "$(ROOT_DIR)/deps/cva6/corev_apu/fpga/src/apb_uart/src/slib_counter.sv"     >> $(buildpath)/$(FPGA_FLIST)
+	echo "$(ROOT_DIR)/deps/cva6/corev_apu/fpga/src/apb_uart/src/slib_edge_detect.sv" >> $(buildpath)/$(FPGA_FLIST)
+	echo "$(ROOT_DIR)/deps/cva6/corev_apu/fpga/src/apb_uart/src/slib_fifo.sv"        >> $(buildpath)/$(FPGA_FLIST)
+	echo "$(ROOT_DIR)/deps/cva6/corev_apu/fpga/src/apb_uart/src/slib_input_filter.sv">> $(buildpath)/$(FPGA_FLIST)
+	echo "$(ROOT_DIR)/deps/cva6/corev_apu/fpga/src/apb_uart/src/slib_input_sync.sv"  >> $(buildpath)/$(FPGA_FLIST)
+	echo "$(ROOT_DIR)/deps/cva6/corev_apu/fpga/src/apb_uart/src/slib_mv_filter.sv"   >> $(buildpath)/$(FPGA_FLIST)
+	echo "$(ROOT_DIR)/deps/cva6/corev_apu/fpga/src/apb_uart/src/uart_baudgen.sv"     >> $(buildpath)/$(FPGA_FLIST)
+	echo "$(ROOT_DIR)/deps/cva6/corev_apu/fpga/src/apb_uart/src/uart_interrupt.sv"   >> $(buildpath)/$(FPGA_FLIST)
+	echo "$(ROOT_DIR)/deps/cva6/corev_apu/fpga/src/apb_uart/src/uart_receiver.sv"    >> $(buildpath)/$(FPGA_FLIST)
+	echo "$(ROOT_DIR)/deps/cva6/corev_apu/fpga/src/apb_uart/src/uart_transmitter.sv" >> $(buildpath)/$(FPGA_FLIST)
 	# Append common_cells FIFO explicitly (used in many blocks; redundant but harmless)
-	echo "$(ROOT_DIR)/deps/common_cells/src/fifo_v3.sv" >> $(buildpath)/synth_fpga_wrap_$(config).f
+	echo "$(ROOT_DIR)/deps/common_cells/src/fifo_v3.sv" >> $(buildpath)/$(FPGA_FLIST)
 
-$(buildpath)/synth_fpga_wrap_incdirs_$(config).txt: $(config_file) Makefile ../Bender.yml
+$(buildpath)/$(FPGA_FINC_TXT): $(config_file) Makefile ../Bender.yml
 	$(BENDER) script vsim $(bender_targs_simc) $(bender_defs) | grep '+incdir+' | \
-		sed 's|.*"+incdir+\$$ROOT/hardware/\(.*\)".*|-incdir ../\1|' | tr '\n' ' ' > $(buildpath)/synth_fpga_wrap_incdirs_$(config).txt
+		sed 's|.*"+incdir+\$$ROOT/hardware/\(.*\)".*|-incdir ../\1|' | tr '\n' ' ' > $(buildpath)/$(FPGA_FINC_TXT)
 # Xcelium simulation (interactive with GUI)
 .PHONY: simx
 simx: compile_xcelium

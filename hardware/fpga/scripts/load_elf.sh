@@ -5,12 +5,10 @@
 #   ./load_elf.sh path/to/program.elf [additional GDB -ex commands...]
 #
 # Notes:
-#   - It is recommended to first run:
-#       source ./sourceme.sh
-#     from the repository root so that the RISCV environment variable is set.
-#   - If RISCV is set, this script uses:
-#       $RISCV/bin/riscv-none-elf-gdb
-#     otherwise it falls back to `riscv-none-elf-gdb` in PATH.
+#   - This script automatically uses the GDB from the repo's toolchain at:
+#       install/riscv-gcc/bin/riscv64-unknown-elf-gdb
+#   - You can override with the $GDB environment variable if needed.
+#   - Falls back to $RISCV/bin/riscv-none-elf-gdb or system PATH if repo GDB not found.
 #   - OpenOCD must already be running and listening on localhost:3333, e.g.:
 #       openocd -f fpga/scripts/openocd.cfg
 #
@@ -34,12 +32,26 @@ ELF="$1"
 shift
 
 # Select GDB command
+# Priority:
+#   1. $GDB environment variable (user override)
+#   2. Repo's toolchain (install/riscv-gcc/bin/riscv64-unknown-elf-gdb)
+#   3. $RISCV/bin/riscv-none-elf-gdb (legacy)
+#   4. System PATH fallback
 if [ -n "$GDB" ]; then
   GDB_CMD="$GDB"
-elif [ -n "$RISCV" ]; then
-  GDB_CMD="$RISCV/bin/riscv-none-elf-gdb"
 else
-  GDB_CMD="riscv-none-elf-gdb"
+  # Try to find repo root and use its toolchain
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+  REPO_GDB="$REPO_ROOT/install/riscv-gcc/bin/riscv64-unknown-elf-gdb"
+
+  if [ -x "$REPO_GDB" ]; then
+    GDB_CMD="$REPO_GDB"
+  elif [ -n "$RISCV" ]; then
+    GDB_CMD="$RISCV/bin/riscv-none-elf-gdb"
+  else
+    GDB_CMD="riscv64-unknown-elf-gdb"
+  fi
 fi
 
 # Default GDB command sequence:
