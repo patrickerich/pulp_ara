@@ -29,6 +29,7 @@
 .weak mtvec_handler
 .weak stvec_handler
 .weak rvtest_init
+.weak uart_init
 
 _start:
     // Initialize global pointer
@@ -111,7 +112,11 @@ reset_vector:
     la t0, rvtest_init
     beqz t0, 1f
     jalr t0
-1:  // Return to _eoc
+1:  // Initialize UART for printf output, if enabled
+    la t0, uart_init
+    beqz t0, 2f
+    jalr t0
+2:  // Return to _eoc
     la      ra, _eoc
     // Call main
     la      t0, main

@@ -64,7 +64,7 @@ fi
 # Any extra arguments are passed verbatim to GDB, so you can add
 # additional -ex commands like "monitor shutdown" and "quit".
 exec "$GDB_CMD" "$ELF" \
-  -ex "target remote localhost:3333" \
+  -ex "target extended-remote localhost:3333" \
   -ex "monitor reset halt" \
   -ex "load" \
   -ex "set \$pc = 0x80000000" \
