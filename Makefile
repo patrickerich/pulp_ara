@@ -74,7 +74,7 @@ toolchain-gcc: git-submodules Makefile
 	cd $(CURDIR)/toolchain/riscv-gnu-toolchain/riscv-binutils
 	cd $(CURDIR)/toolchain/riscv-gnu-toolchain && rm -rf build && mkdir -p build && cd build && \
 	CC=$(CC) CXX=$(CXX) ../configure --prefix=$(GCC_INSTALL_DIR) --with-arch=rv64gcv --with-cmodel=medlow --enable-multilib && \
-	$(MAKE) MAKEINFO=true -j8
+	$(MAKE) MAKEINFO=true GDB_TARGET_FLAGS_EXTRA="--without-python" -j8
 
 toolchain-llvm-main: git-submodules Makefile
 	mkdir -p $(LLVM_INSTALL_DIR)
