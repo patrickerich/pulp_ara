@@ -80,6 +80,38 @@ cd apps
 make bin/hello_world
 ```
 
+#### UART Output for FPGA
+
+By default, applications use `printf()` that outputs to a simulated UART (`fake_uart`) for RTL simulation. To redirect `printf()` output to a real hardware UART (for FPGA deployment), compile applications with the `UART_OUTPUT` macro:
+
+```bash
+# Build dhrystone with UART output enabled
+ENV_DEFINES=-DUART_OUTPUT make -C apps dhrystone
+
+# Build any application with UART output
+ENV_DEFINES=-DUART_OUTPUT make -C apps bin/<app_name>
+```
+
+When `UART_OUTPUT` is defined:
+- The UART hardware at memory address `0xC0000000` is automatically initialized at startup (before `main()`)
+- All `printf()` calls are redirected to the hardware UART (115200 baud, 8N1 format)
+- Output can be observed via a serial terminal connected to the FPGA's UART interface
+- No application source code modifications are required
+
+When compiled **without** `UART_OUTPUT` (default behavior):
+- Applications work normally in RTL simulation (Verilator, ModelSim, Xcelium)
+- `printf()` output goes to `fake_uart` which is captured by the simulation environment
+- This is the standard mode for running simulations
+
+**Example workflow for FPGA:**
+```bash
+# 1. Build application with UART output
+ENV_DEFINES=-DUART_OUTPUT make -C apps dhrystone
+
+# 2. Load the binary to FPGA (method depends on your setup)
+# 3. Connect to UART at 115200 baud to see printf output
+```
+
 ### SPIKE Simulation
 
 All the applications can be simulated with SPIKE. Run the following command to build and run an application. E.g., `hello_world`:
@@ -376,10 +408,35 @@ openocd -f hardware/fpga/scripts/openocd.cfg
 
 This config is currently set up for an Olimex JTAG adapter and a RISC-V JTAG DTM TAP.
 
-#### 5) Loading software (current state)
-- The repository contains helper scripts under `hardware/fpga/scripts/` and `utils/` (e.g. SBA-based loading experiments).
-- For Ara builds, OpenOCD may print:
-  - `Couldn't read vlenb; vector register access won't work.`
+#### 5) Loading and running software
+
+The repository contains helper scripts under `hardware/fpga/scripts/` for loading and running programs via OpenOCD/GDB.
+
+**Interactive mode (for debugging):**
+```bash
+# Load and run interactively (stays in GDB)
+./hardware/fpga/scripts/load_elf.sh apps/bin/hello_world_uart
+# Then manually quit GDB with Ctrl-C followed by 'quit'
+```
+
+**Non-interactive mode (with timeout):**
+```bash
+# Run with automatic timeout (default 5 seconds)
+./hardware/fpga/scripts/run_elf.sh apps/bin/dhrystone
+
+# Run with custom timeout (e.g., 10 seconds)
+./hardware/fpga/scripts/run_elf.sh apps/bin/dhrystone 10
+```
+
+The `run_elf.sh` script is useful for programs that enter infinite loops at the end (like most bare-metal applications). It automatically stops GDB after the specified timeout, allowing you to run benchmarks and tests without manual intervention.
+
+**For applications with UART output:**
+1. Connect a serial terminal to the FPGA's UART (115200 baud)
+2. Build with `ENV_DEFINES=-DUART_OUTPUT`
+3. Run with either script - output appears on the serial terminal
+
+**Notes:**
+- For Ara builds, OpenOCD may print: `Couldn't read vlenb; vector register access won't work.`
   This is usually a non-fatal probe warning and does not prevent basic halt/load/run flows; it only affects vector register access via the debugger.
 
 ### Cheshire FPGA flow (VCU118/VCU128, bare-metal + Linux)
